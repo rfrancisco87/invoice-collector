@@ -1,0 +1,2 @@
+-- This would check for existing documents, but we need Supabase credentials
+-- Let me create a simple API endpoint instead

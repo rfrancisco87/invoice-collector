@@ -1,0 +1,62 @@
+import { NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+
+export async function POST(request: Request) {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const body = await request.json()
+    const { documentId, classification } = body
+
+    if (!documentId || !classification || !['invoice', 'credit_note', 'unclassified'].includes(classification)) {
+      return NextResponse.json(
+        { error: 'Invalid request' },
+        { status: 400 }
+      )
+    }
+
+    // Get document
+    const { data: document, error: docError } = await supabase
+      .from('documents')
+      .select('*')
+      .eq('id', documentId)
+      .eq('user_id', user.id)
+      .single()
+
+    if (docError || !document) {
+      return NextResponse.json({ error: 'Document not found' }, { status: 404 })
+    }
+
+    // Update classification
+    await supabase
+      .from('documents')
+      .update({
+        final_classification: classification,
+        was_reclassified: true,
+      })
+      .eq('id', documentId)
+
+    // Record feedback
+    await supabase.from('user_feedback').insert({
+      user_id: user.id,
+      document_id: documentId,
+      action: 'reclassified',
+      original_classification: document.original_classification,
+      new_classification: classification,
+      sender_domain: document.sender_domain,
+    })
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('Reclassify error:', error)
+    return NextResponse.json(
+      { error: 'Failed to reclassify document' },
+      { status: 500 }
+    )
+  }
+}

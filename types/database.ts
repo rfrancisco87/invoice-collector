@@ -1,0 +1,280 @@
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[]
+
+export type DocumentClassification = 'invoice' | 'credit_note' | 'unclassified'
+export type DocumentStatus = 'pending' | 'approved' | 'rejected'
+export type SyncStatus = 'running' | 'completed' | 'failed'
+export type FeedbackAction = 'approved' | 'rejected' | 'reclassified'
+
+export interface Database {
+  public: {
+    Tables: {
+      gmail_accounts: {
+        Row: {
+          id: string
+          user_id: string
+          email: string
+          access_token: string
+          refresh_token: string
+          token_expiry: string
+          is_primary: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          email: string
+          access_token: string
+          refresh_token: string
+          token_expiry: string
+          is_primary?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          email?: string
+          access_token?: string
+          refresh_token?: string
+          token_expiry?: string
+          is_primary?: boolean
+          created_at?: string
+        }
+      }
+      user_settings: {
+        Row: {
+          id: string
+          user_id: string
+          drive_folder_id: string | null
+          drive_folder_name: string | null
+          drive_folder_path: string | null
+          sync_days_back: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          drive_folder_id?: string | null
+          drive_folder_name?: string | null
+          drive_folder_path?: string | null
+          sync_days_back?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          drive_folder_id?: string | null
+          drive_folder_name?: string | null
+          drive_folder_path?: string | null
+          sync_days_back?: number
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      documents: {
+        Row: {
+          id: string
+          user_id: string
+          gmail_account_id: string
+          email_message_id: string
+          file_hash: string
+          subject: string | null
+          sender: string | null
+          sender_domain: string | null
+          received_date: string
+          filename: string
+          original_classification: DocumentClassification
+          final_classification: DocumentClassification
+          confidence_score: number | null
+          was_reclassified: boolean
+          status: DocumentStatus
+          drive_file_id: string | null
+          drive_folder_path: string | null
+          processed_at: string
+          approved_at: string | null
+          rejected_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          gmail_account_id: string
+          email_message_id: string
+          file_hash: string
+          subject?: string | null
+          sender?: string | null
+          sender_domain?: string | null
+          received_date: string
+          filename: string
+          original_classification: DocumentClassification
+          final_classification: DocumentClassification
+          confidence_score?: number | null
+          was_reclassified?: boolean
+          status?: DocumentStatus
+          drive_file_id?: string | null
+          drive_folder_path?: string | null
+          processed_at?: string
+          approved_at?: string | null
+          rejected_at?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          gmail_account_id?: string
+          email_message_id?: string
+          file_hash?: string
+          subject?: string | null
+          sender?: string | null
+          sender_domain?: string | null
+          received_date?: string
+          filename?: string
+          original_classification?: DocumentClassification
+          final_classification?: DocumentClassification
+          confidence_score?: number | null
+          was_reclassified?: boolean
+          status?: DocumentStatus
+          drive_file_id?: string | null
+          drive_folder_path?: string | null
+          processed_at?: string
+          approved_at?: string | null
+          rejected_at?: string | null
+        }
+      }
+      sync_jobs: {
+        Row: {
+          id: string
+          user_id: string
+          gmail_account_id: string
+          status: SyncStatus
+          sync_from_date: string
+          sync_to_date: string
+          emails_scanned: number
+          documents_found: number
+          duplicates_skipped: number
+          started_at: string
+          completed_at: string | null
+          error_message: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          gmail_account_id: string
+          status?: SyncStatus
+          sync_from_date: string
+          sync_to_date: string
+          emails_scanned?: number
+          documents_found?: number
+          duplicates_skipped?: number
+          started_at?: string
+          completed_at?: string | null
+          error_message?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          gmail_account_id?: string
+          status?: SyncStatus
+          sync_from_date?: string
+          sync_to_date?: string
+          emails_scanned?: number
+          documents_found?: number
+          duplicates_skipped?: number
+          started_at?: string
+          completed_at?: string | null
+          error_message?: string | null
+        }
+      }
+      user_feedback: {
+        Row: {
+          id: string
+          user_id: string
+          document_id: string
+          action: FeedbackAction
+          original_classification: DocumentClassification | null
+          new_classification: DocumentClassification | null
+          sender_domain: string | null
+          feedback_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          document_id: string
+          action: FeedbackAction
+          original_classification?: DocumentClassification | null
+          new_classification?: DocumentClassification | null
+          sender_domain?: string | null
+          feedback_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          document_id?: string
+          action?: FeedbackAction
+          original_classification?: DocumentClassification | null
+          new_classification?: DocumentClassification | null
+          sender_domain?: string | null
+          feedback_at?: string
+        }
+      }
+      sender_reputation: {
+        Row: {
+          id: string
+          user_id: string
+          sender_domain: string
+          approval_count: number
+          rejection_count: number
+          reputation_score: number
+          is_trusted: boolean
+          is_blocked: boolean
+          last_interaction: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          sender_domain: string
+          approval_count?: number
+          rejection_count?: number
+          reputation_score?: number
+          is_trusted?: boolean
+          is_blocked?: boolean
+          last_interaction?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          sender_domain?: string
+          approval_count?: number
+          rejection_count?: number
+          reputation_score?: number
+          is_trusted?: boolean
+          is_blocked?: boolean
+          last_interaction?: string
+          created_at?: string
+          updated_at?: string
+        }
+      }
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      [_ in never]: never
+    }
+    Enums: {
+      document_classification: DocumentClassification
+      document_status: DocumentStatus
+      sync_status: SyncStatus
+      feedback_action: FeedbackAction
+    }
+  }
+}
