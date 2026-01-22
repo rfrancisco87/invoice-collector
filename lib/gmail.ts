@@ -1,6 +1,5 @@
 import { google } from 'googleapis'
 import crypto from 'crypto'
-import { INVOICE_KEYWORDS, CREDIT_NOTE_KEYWORDS } from './constants'
 
 export interface EmailAttachment {
   messageId: string
@@ -29,13 +28,6 @@ export function extractDomain(email: string): string {
   return match ? match[1].toLowerCase() : ''
 }
 
-export function hasInvoiceKeywords(text: string): boolean {
-  const lowerText = text.toLowerCase()
-  return (
-    INVOICE_KEYWORDS.some(keyword => lowerText.includes(keyword)) ||
-    CREDIT_NOTE_KEYWORDS.some(keyword => lowerText.includes(keyword))
-  )
-}
 
 export interface ScanDebugInfo {
   query: string
@@ -114,11 +106,6 @@ export async function scanGmailForInvoices(
         const senderMatch = from.match(/<(.+)>/) || from.match(/^(.+)$/)
         const senderEmail = senderMatch ? senderMatch[1].trim() : from
         const senderDomain = extractDomain(senderEmail)
-
-        // Filter by invoice keywords
-        if (!hasInvoiceKeywords(subject) && !hasInvoiceKeywords(from)) {
-          continue
-        }
 
         // Parse date
         const receivedDate = dateHeader ? new Date(dateHeader) : new Date()

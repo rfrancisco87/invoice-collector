@@ -22,25 +22,8 @@ export function SyncButton() {
         throw new Error(data.details || data.error || 'Sync failed')
       }
 
-      // Refresh the page to show new documents
+      // Refresh the page to show new documents and updated sync info
       router.refresh()
-
-      // Show detailed debug info
-      const debugMsg = data.debug
-        ? `\n\nDebug Info:\n` +
-          `- Query: ${data.debug.query}\n` +
-          `- Days back: ${data.debug.daysBack}\n` +
-          `- After date: ${data.debug.afterDate}\n` +
-          `- Messages found with date filter: ${data.debug.messagesFound}\n` +
-          `- Messages without date filter: ${data.debug.messagesWithoutDateFilter}\n` +
-          `- PDF attachments extracted: ${data.debug.pdfAttachmentsFound}`
-        : ''
-
-      const processingLog = data.processingLog && data.processingLog.length > 0
-        ? `\n\nProcessing Log:\n${data.processingLog.join('\n')}`
-        : ''
-
-      alert(`Sync complete! Found ${data.documentsFound} new documents, skipped ${data.duplicatesSkipped} duplicates.${debugMsg}${processingLog}`)
     } catch (error) {
       console.error('Sync error:', error)
       const errorMessage = error instanceof Error ? error.message : 'Failed to sync emails. Please try again.'

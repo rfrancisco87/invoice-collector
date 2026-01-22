@@ -86,6 +86,17 @@ export async function POST(request: Request) {
     const { action } = await request.json()
 
     if (action === 'test_email') {
+      // Check if Resend API key is configured
+      if (!process.env.RESEND_API_KEY) {
+        return NextResponse.json(
+          {
+            error: 'Resend API key not configured',
+            details: 'Please restart your development server after adding RESEND_API_KEY to .env.local'
+          },
+          { status: 500 }
+        )
+      }
+
       const { data: settings } = await supabase
         .from('user_settings')
         .select('notification_email')

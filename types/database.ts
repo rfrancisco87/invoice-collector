@@ -54,6 +54,11 @@ export interface Database {
           drive_folder_name: string | null
           drive_folder_path: string | null
           sync_days_back: number
+          auto_sync_enabled: boolean
+          email_notifications_enabled: boolean
+          notification_email: string | null
+          last_auto_sync_at: string | null
+          webhook_url: string | null
           created_at: string
           updated_at: string
         }
@@ -64,6 +69,11 @@ export interface Database {
           drive_folder_name?: string | null
           drive_folder_path?: string | null
           sync_days_back?: number
+          auto_sync_enabled?: boolean
+          email_notifications_enabled?: boolean
+          notification_email?: string | null
+          last_auto_sync_at?: string | null
+          webhook_url?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -74,6 +84,11 @@ export interface Database {
           drive_folder_name?: string | null
           drive_folder_path?: string | null
           sync_days_back?: number
+          auto_sync_enabled?: boolean
+          email_notifications_enabled?: boolean
+          notification_email?: string | null
+          last_auto_sync_at?: string | null
+          webhook_url?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -100,6 +115,18 @@ export interface Database {
           processed_at: string
           approved_at: string | null
           rejected_at: string | null
+          invoice_number: string | null
+          issue_date: string | null
+          supplier_name: string | null
+          supplier_vat_number: string | null
+          total_without_vat: number | null
+          total_vat: number | null
+          invoice_total: number | null
+          currency: string | null
+          numb_pages: number | null
+          document_type: string | null
+          webhook_processed_at: string | null
+          webhook_error: string | null
         }
         Insert: {
           id?: string
@@ -122,6 +149,18 @@ export interface Database {
           processed_at?: string
           approved_at?: string | null
           rejected_at?: string | null
+          invoice_number?: string | null
+          issue_date?: string | null
+          supplier_name?: string | null
+          supplier_vat_number?: string | null
+          total_without_vat?: number | null
+          total_vat?: number | null
+          invoice_total?: number | null
+          currency?: string | null
+          numb_pages?: number | null
+          document_type?: string | null
+          webhook_processed_at?: string | null
+          webhook_error?: string | null
         }
         Update: {
           id?: string
@@ -144,6 +183,18 @@ export interface Database {
           processed_at?: string
           approved_at?: string | null
           rejected_at?: string | null
+          invoice_number?: string | null
+          issue_date?: string | null
+          supplier_name?: string | null
+          supplier_vat_number?: string | null
+          total_without_vat?: number | null
+          total_vat?: number | null
+          invoice_total?: number | null
+          currency?: string | null
+          numb_pages?: number | null
+          document_type?: string | null
+          webhook_processed_at?: string | null
+          webhook_error?: string | null
         }
       }
       sync_jobs: {

@@ -1,5 +1,9 @@
 import { Resend } from 'resend'
 
+if (!process.env.RESEND_API_KEY) {
+  console.warn('[Email] WARNING: RESEND_API_KEY environment variable is not set!')
+}
+
 const resend = new Resend(process.env.RESEND_API_KEY)
 
 interface Document {
@@ -124,8 +128,11 @@ export async function sendNewDocumentsEmail(
 </html>
     `
 
+    // Use Resend's testing domain if EMAIL_FROM is not set
+    const fromEmail = process.env.EMAIL_FROM || 'onboarding@resend.dev'
+
     const { data, error } = await resend.emails.send({
-      from: process.env.EMAIL_FROM || 'Invoice Collector <notifications@invoicecollector.com>',
+      from: fromEmail,
       to: toEmail,
       subject: `${documents.length} New ${documents.length === 1 ? 'Invoice' : 'Invoices'} Detected`,
       html,
@@ -144,8 +151,16 @@ export async function sendNewDocumentsEmail(
 
 export async function sendTestEmail(toEmail: string) {
   try {
+    // Use Resend's testing domain if EMAIL_FROM is not set
+    // To use a custom domain, verify it in Resend dashboard and set EMAIL_FROM env var
+    const fromEmail = process.env.EMAIL_FROM || 'onboarding@resend.dev'
+
+    console.log('[Email] Sending test email to:', toEmail)
+    console.log('[Email] From address:', fromEmail)
+    console.log('[Email] API Key present:', !!process.env.RESEND_API_KEY)
+
     const { data, error } = await resend.emails.send({
-      from: process.env.EMAIL_FROM || 'Invoice Collector <notifications@invoicecollector.com>',
+      from: fromEmail,
       to: toEmail,
       subject: 'Test Email - Invoice Collector',
       html: `
@@ -168,12 +183,14 @@ export async function sendTestEmail(toEmail: string) {
     })
 
     if (error) {
+      console.error('[Email] Resend API error:', error)
       throw new Error(`Failed to send test email: ${error.message}`)
     }
 
+    console.log('[Email] Test email sent successfully. Email ID:', data?.id)
     return { success: true, emailId: data?.id }
   } catch (error) {
-    console.error('Test email error:', error)
+    console.error('[Email] Test email error:', error)
     throw error
   }
 }

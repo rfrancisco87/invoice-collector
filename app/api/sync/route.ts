@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { scanGmailForInvoices, calculateFileHash } from '@/lib/gmail'
-import { classifyDocument } from '@/lib/document-ai'
+import { sendPdfToWebhook } from '@/lib/webhook'
 import { getDriveClient } from '@/lib/google-drive'
 import { getValidAccessToken } from '@/lib/token-refresh'
 import { Readable } from 'stream'
@@ -153,17 +153,12 @@ export async function POST(request: Request) {
         }
         processingLog.push(`No duplicate found`)
 
-        // Step 3: Classify document
-        processingLog.push(`Classifying document...`)
-        const classification = await classifyDocument(attachment.data, attachment.filename)
-        processingLog.push(`Classification: ${classification.classification} (${classification.confidence})`)
-
-        // Step 4: Get Drive client
+        // Step 3: Get Drive client
         processingLog.push(`Initializing Drive client...`)
         const drive = await getDriveClient(providerToken)
         processingLog.push(`Drive client ready`)
 
-        // Step 5: Find or create Pending Approval folder
+        // Step 4: Find or create Pending Approval folder
         processingLog.push(`Finding Pending Approval folder in ${settings.drive_folder_id}...`)
         const foldersResponse = await drive.files.list({
           q: `name='Pending Approval' and '${settings.drive_folder_id}' in parents and trashed=false`,
@@ -188,7 +183,7 @@ export async function POST(request: Request) {
           processingLog.push(`Found folder: ${pendingFolderId}`)
         }
 
-        // Step 6: Upload to Drive
+        // Step 5: Upload to Drive
         processingLog.push(`Uploading ${attachment.filename} to Drive...`)
         processingLog.push(`File size: ${attachment.data.length} bytes`)
 
@@ -215,6 +210,44 @@ export async function POST(request: Request) {
 
         processingLog.push(`Uploaded to Drive: ${fileResponse.data.id}`)
 
+        // Step 6: Process with webhook (if configured)
+        let webhookData = null
+        let webhookError = null
+        let classification: 'invoice' | 'credit_note' | 'unclassified' = 'unclassified'
+
+        if (settings.webhook_url && settings.webhook_url.trim()) {
+          processingLog.push(`Sending to webhook for processing...`)
+          try {
+            const response = await sendPdfToWebhook(
+              attachment.data,
+              attachment.filename,
+              settings.webhook_url
+            )
+            webhookData = response
+
+            // Determine classification from webhook response
+            // supplier_invoice -> invoice, credit_note -> credit_note
+            if (response.document_type === 'supplier_invoice') {
+              classification = 'invoice'
+            } else if (response.document_type === 'credit_note') {
+              classification = 'credit_note'
+            } else {
+              classification = 'unclassified'
+            }
+
+            processingLog.push(`Webhook processed: ${response.document_type || 'unclassified'}`)
+            processingLog.push(`Invoice #: ${response.invoice_number || 'N/A'}`)
+            processingLog.push(`Supplier: ${response.supplier_name || 'N/A'}`)
+            processingLog.push(`Total: ${response.invoice_total || 'N/A'} ${response.currency || ''}`)
+          } catch (error) {
+            webhookError = error instanceof Error ? error.message : 'Unknown webhook error'
+            processingLog.push(`⚠ Webhook failed: ${webhookError}`)
+            processingLog.push(`Document will be saved without webhook data`)
+          }
+        } else {
+          processingLog.push(`No webhook URL configured, skipping webhook processing`)
+        }
+
         // Step 7: Save to database
         processingLog.push(`Saving to database...`)
         const { error: insertError } = await supabase.from('documents').insert({
@@ -227,12 +260,25 @@ export async function POST(request: Request) {
           sender_domain: attachment.senderDomain,
           received_date: attachment.receivedDate.toISOString(),
           filename: attachment.filename,
-          original_classification: classification.classification,
-          final_classification: classification.classification,
-          confidence_score: classification.confidence,
+          original_classification: classification,
+          final_classification: classification,
+          confidence_score: webhookData ? 1.0 : 0.5,
           status: 'pending',
           drive_file_id: fileResponse.data.id,
           drive_folder_path: 'Pending Approval',
+          // Webhook data fields
+          invoice_number: webhookData?.invoice_number || null,
+          issue_date: webhookData?.issue_date || null,
+          supplier_name: webhookData?.supplier_name || null,
+          supplier_vat_number: webhookData?.supplier_vat_number || null,
+          total_without_vat: webhookData?.total_without_vat ? parseFloat(webhookData.total_without_vat) : null,
+          total_vat: webhookData?.total_vat ? parseFloat(webhookData.total_vat) : null,
+          invoice_total: webhookData?.invoice_total ? parseFloat(webhookData.invoice_total) : null,
+          currency: webhookData?.currency || null,
+          numb_pages: webhookData?.numb_pages || null,
+          document_type: webhookData?.document_type || null,
+          webhook_processed_at: webhookData ? new Date().toISOString() : null,
+          webhook_error: webhookError,
         })
 
         if (insertError) {
