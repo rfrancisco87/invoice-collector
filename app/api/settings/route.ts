@@ -45,6 +45,9 @@ export async function PATCH(request: Request) {
       auto_sync_enabled,
       email_notifications_enabled,
       notification_email,
+      gmail_sync_label,
+      archive_synced_emails,
+      subscription_tier,
     } = body
 
     const updates: any = {}
@@ -53,6 +56,9 @@ export async function PATCH(request: Request) {
     if (auto_sync_enabled !== undefined) updates.auto_sync_enabled = auto_sync_enabled
     if (email_notifications_enabled !== undefined) updates.email_notifications_enabled = email_notifications_enabled
     if (notification_email !== undefined) updates.notification_email = notification_email
+    if (gmail_sync_label !== undefined) updates.gmail_sync_label = gmail_sync_label || null
+    if (archive_synced_emails !== undefined) updates.archive_synced_emails = archive_synced_emails
+    if (subscription_tier !== undefined) updates.subscription_tier = subscription_tier
 
     const { data: settings, error } = await supabase
       .from('user_settings')

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { scanGmailForInvoices, calculateFileHash } from '@/lib/gmail'
+import { scanGmailForInvoices, calculateFileHash, getGmailClient, getOrCreateLabel, applyLabelToMessage, archiveMessage } from '@/lib/gmail'
 import { sendPdfToWebhook } from '@/lib/webhook'
 import { getDriveClient } from '@/lib/google-drive'
 import { getValidAccessToken } from '@/lib/token-refresh'
@@ -99,6 +99,22 @@ export async function POST(request: Request) {
 
     if (syncJobError || !syncJob) {
       return NextResponse.json({ error: 'Failed to create sync job' }, { status: 500 })
+    }
+
+    // Get or create Gmail label for synced emails
+    let gmailLabelId: string | null = null
+    if (settings.gmail_sync_label && settings.gmail_sync_label.trim()) {
+      try {
+        console.log(`[LABEL] Attempting to get/create label: "${settings.gmail_sync_label}"`)
+        const gmail = await getGmailClient(providerToken)
+        gmailLabelId = await getOrCreateLabel(gmail, settings.gmail_sync_label)
+        console.log(`[LABEL] Successfully got/created label with ID: ${gmailLabelId}`)
+      } catch (error) {
+        console.error('[LABEL] Failed to get/create Gmail label:', error)
+        // Continue sync even if label creation fails
+      }
+    } else {
+      console.log('[LABEL] No Gmail label configured, skipping labeling')
     }
 
     // Scan Gmail for invoices
@@ -290,6 +306,40 @@ export async function POST(request: Request) {
 
         documentsFound++
         processingLog.push(`✓ SUCCESS - Document saved to database`)
+
+        // Step 8: Apply Gmail label to mark as synced
+        if (gmailLabelId) {
+          processingLog.push(`Attempting to apply label ${gmailLabelId} to message ${attachment.messageId}`)
+          try {
+            const gmail = await getGmailClient(providerToken)
+            await applyLabelToMessage(gmail, attachment.messageId, gmailLabelId)
+            processingLog.push(`✓ Gmail label applied to email`)
+            console.log(`[LABEL] Successfully applied label ${gmailLabelId} to message ${attachment.messageId}`)
+          } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : 'Unknown error'
+            processingLog.push(`⚠ Failed to apply Gmail label: ${errorMsg}`)
+            console.error(`[LABEL] Failed to apply label to message ${attachment.messageId}:`, error)
+            // Don't fail the sync if labeling fails
+          }
+        } else {
+          processingLog.push(`⚠ No Gmail label ID available, skipping labeling`)
+        }
+
+        // Step 9: Archive email if enabled
+        if (settings.archive_synced_emails) {
+          processingLog.push(`Attempting to archive message ${attachment.messageId}`)
+          try {
+            const gmail = await getGmailClient(providerToken)
+            await archiveMessage(gmail, attachment.messageId)
+            processingLog.push(`✓ Email archived (removed from inbox)`)
+            console.log(`[ARCHIVE] Successfully archived message ${attachment.messageId}`)
+          } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : 'Unknown error'
+            processingLog.push(`⚠ Failed to archive email: ${errorMsg}`)
+            console.error(`[ARCHIVE] Failed to archive message ${attachment.messageId}:`, error)
+            // Don't fail the sync if archiving fails
+          }
+        }
 
       } catch (error) {
         processingLog.push(`✗ FAILED - ${error instanceof Error ? error.message : String(error)}`)

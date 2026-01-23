@@ -28,6 +28,104 @@ export function extractDomain(email: string): string {
   return match ? match[1].toLowerCase() : ''
 }
 
+/**
+ * Get or create a Gmail label
+ * @param gmail - Gmail API client
+ * @param labelName - Name of the label to create/get
+ * @returns Label ID
+ */
+export async function getOrCreateLabel(
+  gmail: any,
+  labelName: string
+): Promise<string> {
+  try {
+    console.log(`[getOrCreateLabel] Listing existing labels to find "${labelName}"`)
+    // List existing labels
+    const labelsResponse = await gmail.users.labels.list({
+      userId: 'me',
+    })
+
+    const labels = labelsResponse.data.labels || []
+    console.log(`[getOrCreateLabel] Found ${labels.length} total labels`)
+    const existingLabel = labels.find((label: any) => label.name === labelName)
+
+    if (existingLabel) {
+      console.log(`[getOrCreateLabel] Found existing label: ${existingLabel.name} (ID: ${existingLabel.id})`)
+      return existingLabel.id
+    }
+
+    // Create new label if it doesn't exist
+    console.log(`[getOrCreateLabel] Label "${labelName}" not found, creating new label`)
+    const createResponse = await gmail.users.labels.create({
+      userId: 'me',
+      requestBody: {
+        name: labelName,
+        labelListVisibility: 'labelShow',
+        messageListVisibility: 'show',
+      },
+    })
+
+    console.log(`[getOrCreateLabel] Created new label: ${labelName} (ID: ${createResponse.data.id})`)
+    return createResponse.data.id
+  } catch (error) {
+    console.error('[getOrCreateLabel] Error getting/creating label:', error)
+    throw new Error('Failed to get or create Gmail label')
+  }
+}
+
+/**
+ * Apply a label to a Gmail message
+ * @param gmail - Gmail API client
+ * @param messageId - Gmail message ID
+ * @param labelId - Label ID to apply
+ */
+export async function applyLabelToMessage(
+  gmail: any,
+  messageId: string,
+  labelId: string
+): Promise<void> {
+  try {
+    console.log(`[applyLabelToMessage] Modifying message ${messageId} with label ${labelId}`)
+    const result = await gmail.users.messages.modify({
+      userId: 'me',
+      id: messageId,
+      requestBody: {
+        addLabelIds: [labelId],
+      },
+    })
+    console.log(`[applyLabelToMessage] Successfully modified message, result:`, result.data)
+  } catch (error) {
+    console.error(`[applyLabelToMessage] Error applying label ${labelId} to message ${messageId}:`, error)
+    // Re-throw so the caller can log the error
+    throw error
+  }
+}
+
+/**
+ * Archive a Gmail message (remove from inbox)
+ * @param gmail - Gmail API client
+ * @param messageId - Gmail message ID
+ */
+export async function archiveMessage(
+  gmail: any,
+  messageId: string
+): Promise<void> {
+  try {
+    console.log(`[archiveMessage] Archiving message ${messageId}`)
+    const result = await gmail.users.messages.modify({
+      userId: 'me',
+      id: messageId,
+      requestBody: {
+        removeLabelIds: ['INBOX'],
+      },
+    })
+    console.log(`[archiveMessage] Successfully archived message, result:`, result.data)
+  } catch (error) {
+    console.error(`[archiveMessage] Error archiving message ${messageId}:`, error)
+    throw error
+  }
+}
+
 
 export interface ScanDebugInfo {
   query: string

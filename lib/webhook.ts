@@ -55,8 +55,21 @@ export async function sendPdfToWebhook(
       )
     }
 
-    // Parse JSON response
-    const data = (await response.json()) as WebhookResponse
+    // Parse JSON response - handle nested structure
+    const rawResponse = await response.json()
+
+    // Extract data from nested path: [0].message.content
+    // The webhook returns an array with structure: [{ message: { content: { ...invoice_data } } }]
+    let data: WebhookResponse
+    if (Array.isArray(rawResponse) && rawResponse[0]?.message?.content) {
+      data = rawResponse[0].message.content as WebhookResponse
+    } else if (rawResponse.message?.content) {
+      // Fallback for single object with nested structure
+      data = rawResponse.message.content as WebhookResponse
+    } else {
+      // Fallback to flat structure for compatibility
+      data = rawResponse as WebhookResponse
+    }
 
     // Validate response has required fields
     if (!data || typeof data !== 'object') {

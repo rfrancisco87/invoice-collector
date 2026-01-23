@@ -17,6 +17,8 @@ interface Document {
   drive_file_id: string
   status: string
   was_reclassified: boolean
+  webhook_error: string | null
+  document_type: string | null
 }
 
 interface DocumentListProps {
@@ -27,6 +29,7 @@ export function DocumentList({ documents }: DocumentListProps) {
   const router = useRouter()
   const [processingId, setProcessingId] = useState<string | null>(null)
   const [reclassifyingId, setReclassifyingId] = useState<string | null>(null)
+  const [reprocessingId, setReprocessingId] = useState<string | null>(null)
 
   const handleAction = async (documentId: string, action: 'approve' | 'reject') => {
     try {
@@ -69,6 +72,29 @@ export function DocumentList({ documents }: DocumentListProps) {
     } catch (error) {
       console.error('Reclassify error:', error)
       alert('Failed to reclassify document. Please try again.')
+    }
+  }
+
+  const handleReprocess = async (documentId: string) => {
+    try {
+      setReprocessingId(documentId)
+
+      const response = await fetch('/api/documents/reprocess-webhook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documentId }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Reprocess failed')
+      }
+
+      router.refresh()
+    } catch (error) {
+      console.error('Reprocess error:', error)
+      alert('Failed to reprocess document. Please try again.')
+    } finally {
+      setReprocessingId(null)
     }
   }
 
@@ -128,6 +154,11 @@ export function DocumentList({ documents }: DocumentListProps) {
                     Reclassified
                   </span>
                 )}
+                {doc.webhook_error && (
+                  <span className="inline-flex rounded-full bg-red-100 px-2 py-1 text-xs font-semibold text-red-800">
+                    Webhook Error
+                  </span>
+                )}
               </div>
               <div className="mt-1 text-sm text-gray-600">
                 <p>
@@ -176,7 +207,7 @@ export function DocumentList({ documents }: DocumentListProps) {
                 <>
                   <Button
                     onClick={() => handleAction(doc.id, 'approve')}
-                    disabled={processingId === doc.id}
+                    disabled={processingId === doc.id || reprocessingId === doc.id}
                     variant="default"
                     size="sm"
                   >
@@ -184,7 +215,7 @@ export function DocumentList({ documents }: DocumentListProps) {
                   </Button>
                   <Button
                     onClick={() => handleAction(doc.id, 'reject')}
-                    disabled={processingId === doc.id}
+                    disabled={processingId === doc.id || reprocessingId === doc.id}
                     variant="destructive"
                     size="sm"
                   >
@@ -192,12 +223,22 @@ export function DocumentList({ documents }: DocumentListProps) {
                   </Button>
                   <Button
                     onClick={() => setReclassifyingId(doc.id)}
-                    disabled={processingId === doc.id}
+                    disabled={processingId === doc.id || reprocessingId === doc.id}
                     variant="outline"
                     size="sm"
                   >
                     Reclassify
                   </Button>
+                  {doc.webhook_error && (
+                    <Button
+                      onClick={() => handleReprocess(doc.id)}
+                      disabled={processingId === doc.id || reprocessingId === doc.id}
+                      variant="outline"
+                      size="sm"
+                    >
+                      {reprocessingId === doc.id ? 'Reprocessing...' : 'Reprocess'}
+                    </Button>
+                  )}
                 </>
               )}
             </div>

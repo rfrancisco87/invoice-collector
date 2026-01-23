@@ -59,6 +59,10 @@ export interface Database {
           notification_email: string | null
           last_auto_sync_at: string | null
           webhook_url: string | null
+          gmail_sync_label: string | null
+          archive_synced_emails: boolean
+          subscription_tier: 'free' | 'paid'
+          sync_frequency_minutes: number
           created_at: string
           updated_at: string
         }
@@ -74,6 +78,10 @@ export interface Database {
           notification_email?: string | null
           last_auto_sync_at?: string | null
           webhook_url?: string | null
+          gmail_sync_label?: string | null
+          archive_synced_emails?: boolean
+          subscription_tier?: 'free' | 'paid'
+          sync_frequency_minutes?: number
           created_at?: string
           updated_at?: string
         }
@@ -89,6 +97,10 @@ export interface Database {
           notification_email?: string | null
           last_auto_sync_at?: string | null
           webhook_url?: string | null
+          gmail_sync_label?: string | null
+          archive_synced_emails?: boolean
+          subscription_tier?: 'free' | 'paid'
+          sync_frequency_minutes?: number
           created_at?: string
           updated_at?: string
         }

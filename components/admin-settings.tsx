@@ -85,9 +85,9 @@ export function AdminSettings({ initialWebhookUrl }: AdminSettingsProps) {
 
   return (
     <div className="space-y-6">
-      {/* Webhook URL Configuration */}
+      {/* Webhook Configuration */}
       <div className="rounded-lg bg-white p-6 shadow">
-        <h2 className="text-lg font-semibold text-gray-900">
+        <h2 className="text-xl font-semibold text-gray-900">
           Invoice Processing Webhook
         </h2>
         <p className="mt-1 text-sm text-gray-600">
@@ -115,14 +115,14 @@ export function AdminSettings({ initialWebhookUrl }: AdminSettingsProps) {
 
         {/* Action Buttons */}
         <div className="mt-6 flex gap-3">
-          <Button onClick={handleSave} disabled={isSaving} variant="default">
+          <Button onClick={handleSave} disabled={isSaving} variant="default" size="lg">
             {isSaving ? (
               <>
                 <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
                 Saving...
               </>
             ) : (
-              'Save Settings'
+              'Save Webhook URL'
             )}
           </Button>
 
@@ -130,6 +130,7 @@ export function AdminSettings({ initialWebhookUrl }: AdminSettingsProps) {
             onClick={handleTest}
             disabled={isTesting || !webhookUrl.trim()}
             variant="outline"
+            size="lg"
           >
             {isTesting ? (
               <>

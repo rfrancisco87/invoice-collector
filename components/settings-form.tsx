@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Bell, Mail, Clock, Check } from 'lucide-react'
+import { Bell, Mail, Clock, Check, Tag, Archive } from 'lucide-react'
 
 interface Settings {
   sync_days_back: number
@@ -10,6 +10,10 @@ interface Settings {
   email_notifications_enabled: boolean
   notification_email: string | null
   last_auto_sync_at: string | null
+  gmail_sync_label: string | null
+  archive_synced_emails: boolean
+  subscription_tier?: 'free' | 'paid'
+  sync_frequency_minutes?: number
 }
 
 interface SettingsFormProps {
@@ -23,6 +27,9 @@ export function SettingsForm({ settings, userEmail }: SettingsFormProps) {
     auto_sync_enabled: settings?.auto_sync_enabled ?? true,
     email_notifications_enabled: settings?.email_notifications_enabled ?? true,
     notification_email: settings?.notification_email || userEmail,
+    gmail_sync_label: settings?.gmail_sync_label || 'Invoice Collector - Synced',
+    archive_synced_emails: settings?.archive_synced_emails ?? false,
+    subscription_tier: settings?.subscription_tier || 'free',
   })
   const [isSaving, setIsSaving] = useState(false)
   const [isSendingTest, setIsSendingTest] = useState(false)
@@ -90,9 +97,8 @@ export function SettingsForm({ settings, userEmail }: SettingsFormProps) {
       {/* Message Banner */}
       {message && (
         <div
-          className={`rounded-lg p-4 ${
-            message.type === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'
-          }`}
+          className={`rounded-lg p-4 ${message.type === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'
+            }`}
         >
           <div className="flex items-center gap-2">
             {message.type === 'success' && <Check className="h-5 w-5" />}
@@ -154,6 +160,29 @@ export function SettingsForm({ settings, userEmail }: SettingsFormProps) {
                 </p>
               )}
             </div>
+          </div>
+
+          <div className="pt-4 border-t border-gray-100">
+            <label htmlFor="subscription_tier" className="block text-sm font-medium text-gray-700">
+              Subscription Tier (Admin Control)
+            </label>
+            <div className="mt-1 flex items-center gap-4">
+              <select
+                id="subscription_tier"
+                value={formData.subscription_tier}
+                onChange={(e) => setFormData({ ...formData, subscription_tier: e.target.value as 'free' | 'paid' })}
+                className="block w-full max-w-xs rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-blue-500"
+              >
+                <option value="free">Free (Syncs every 12 hours)</option>
+                <option value="paid">Paid (Syncs every 15 minutes)</option>
+              </select>
+              <div className="text-sm text-gray-500">
+                Current frequency: {formData.subscription_tier === 'paid' ? '15 minutes' : '720 minutes (12h)'}
+              </div>
+            </div>
+            <p className="mt-1 text-sm text-gray-500">
+              In production, this would be managed by your billing system.
+            </p>
           </div>
         </div>
       </div>
@@ -220,6 +249,54 @@ export function SettingsForm({ settings, userEmail }: SettingsFormProps) {
               </Button>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Gmail Settings */}
+      <div className="rounded-lg bg-white p-6 shadow">
+        <div className="flex items-center gap-3 mb-4">
+          <Tag className="h-6 w-6 text-blue-600" />
+          <h2 className="text-lg font-semibold text-gray-900">Gmail Settings</h2>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label htmlFor="gmail_sync_label" className="block text-sm font-medium text-gray-700">
+              Gmail Label for Synced Emails
+            </label>
+            <input
+              type="text"
+              id="gmail_sync_label"
+              value={formData.gmail_sync_label}
+              onChange={(e) => setFormData({ ...formData, gmail_sync_label: e.target.value })}
+              placeholder="Invoice Collector - Synced"
+              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-blue-500"
+            />
+            <p className="mt-1 text-sm text-gray-500">
+              This label will be created in Gmail and applied to all synced emails. Leave empty to disable labeling.
+            </p>
+          </div>
+
+          <div className="flex items-start">
+            <div className="flex h-5 items-center">
+              <input
+                id="archive_synced_emails"
+                type="checkbox"
+                checked={formData.archive_synced_emails}
+                onChange={(e) => setFormData({ ...formData, archive_synced_emails: e.target.checked })}
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+            </div>
+            <div className="ml-3">
+              <label htmlFor="archive_synced_emails" className="font-medium text-gray-700">
+                <Archive className="inline h-4 w-4 mr-1" />
+                Archive synced emails
+              </label>
+              <p className="text-sm text-gray-500">
+                Remove synced emails from your inbox. Emails will still be accessible in Gmail under "All Mail".
+              </p>
+            </div>
+          </div>
         </div>
       </div>
 
