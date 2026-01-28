@@ -15,29 +15,10 @@ import { sendNewDocumentsEmail } from '@/lib/email'
 import { Readable } from 'stream'
 
 /**
- * Cron Sync Endpoint
- *
- * This endpoint is called by an external cron service (Vercel Cron, cron-job.org, GitHub Actions, etc.)
- * It syncs emails for all users based on their subscription tier:
- * - Free users: Every 12 hours (2x per day)
- * - Paid users: Every 15 minutes
- *
- * Protect with CRON_SECRET environment variable.
- *
- * Example cron setup:
- * - Call POST /api/cron/sync every 15 minutes
- * - Include header: Authorization: Bearer YOUR_CRON_SECRET
+ * Shared sync logic used by both GET (Vercel cron) and POST (manual trigger)
  */
-export async function POST(request: Request) {
-  const startTime = Date.now()
-
+async function runCronSync(startTime: number) {
   try {
-    // Verify cron secret
-    const authHeader = request.headers.get('authorization')
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
     // Create Supabase admin client (bypasses RLS)
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -421,56 +402,57 @@ export async function POST(request: Request) {
 }
 
 /**
- * GET endpoint for health check / status
+ * GET endpoint - Called by Vercel Cron
+ * Vercel cron jobs send GET requests, so this is the main entry point for automated syncs.
  */
 export async function GET(request: Request) {
-  // Verify cron secret for status check too
-  const authHeader = request.headers.get('authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const startTime = Date.now()
 
   try {
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
-        },
-      }
-    )
-
-    // Get stats about auto-sync users
-    const { data: settings } = await supabase
-      .from('user_settings')
-      .select('subscription_tier, sync_frequency_minutes, last_auto_sync_at, auto_sync_enabled')
-      .eq('auto_sync_enabled', true)
-
-    const now = new Date()
-    const stats = {
-      total_auto_sync_users: settings?.length || 0,
-      free_users: settings?.filter((s) => s.subscription_tier === 'free' || !s.subscription_tier).length || 0,
-      paid_users: settings?.filter((s) => s.subscription_tier === 'paid').length || 0,
-      users_due_for_sync:
-        settings?.filter((s) => {
-          if (!s.last_auto_sync_at) return true
-          const lastSync = new Date(s.last_auto_sync_at)
-          const minutesSinceLastSync = (now.getTime() - lastSync.getTime()) / (1000 * 60)
-          return minutesSinceLastSync >= (s.sync_frequency_minutes || 720)
-        }).length || 0,
+    // Verify cron secret - Vercel sends this automatically for cron jobs
+    const authHeader = request.headers.get('authorization')
+    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    return NextResponse.json({
-      status: 'healthy',
-      ...stats,
-    })
+    // Run the sync logic
+    return await runCronSync(startTime)
   } catch (error) {
+    console.error('Cron sync (GET) failed:', error)
     return NextResponse.json(
       {
-        status: 'error',
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: 'Cron job failed',
+        details: error instanceof Error ? error.message : 'Unknown error',
+        duration_ms: Date.now() - startTime,
+      },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * POST endpoint - For manual triggers or external cron services
+ * Can be used for testing or by services that prefer POST requests.
+ */
+export async function POST(request: Request) {
+  const startTime = Date.now()
+
+  try {
+    // Verify cron secret
+    const authHeader = request.headers.get('authorization')
+    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Run the sync logic
+    return await runCronSync(startTime)
+  } catch (error) {
+    console.error('Cron sync (POST) failed:', error)
+    return NextResponse.json(
+      {
+        error: 'Cron job failed',
+        details: error instanceof Error ? error.message : 'Unknown error',
+        duration_ms: Date.now() - startTime,
       },
       { status: 500 }
     )
