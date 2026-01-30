@@ -128,9 +128,28 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'No email address configured' }, { status: 400 })
       }
 
-      await sendTestEmail(emailTo)
+      try {
+        await sendTestEmail(emailTo)
+        return NextResponse.json({ success: true, message: 'Test email sent' })
+      } catch (emailError) {
+        const errorMessage = emailError instanceof Error ? emailError.message : 'Unknown error'
 
-      return NextResponse.json({ success: true, message: 'Test email sent' })
+        // Check if it's a Resend validation error about email restrictions
+        if (errorMessage.includes('You can only send testing emails to your own email address')) {
+          return NextResponse.json(
+            {
+              error: 'Email restriction',
+              details: 'With the free Resend plan, test emails can only be sent to the account owner\'s email. Please verify a domain at resend.com/domains to send to other addresses, or update your notification email to match your Resend account email.'
+            },
+            { status: 403 }
+          )
+        }
+
+        return NextResponse.json(
+          { error: 'Failed to send test email', details: errorMessage },
+          { status: 500 }
+        )
+      }
     }
 
     return NextResponse.json({ error: 'Invalid action' }, { status: 400 })

@@ -46,15 +46,15 @@ export function UserMenu({ user, isAdmin = false }: UserMenuProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="relative h-9 w-9 rounded-full">
+        <Button variant="ghost" className="relative h-9 w-9 rounded-full p-0">
           {user.user_metadata?.avatar_url ? (
             <img
               src={user.user_metadata.avatar_url}
               alt={displayName}
-              className="h-9 w-9 rounded-full object-cover"
+              className="h-full w-full rounded-full object-cover"
             />
           ) : (
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-sm font-medium text-primary-foreground">
+            <div className="flex h-full w-full items-center justify-center rounded-full bg-primary text-sm font-medium text-primary-foreground">
               {initials}
             </div>
           )}

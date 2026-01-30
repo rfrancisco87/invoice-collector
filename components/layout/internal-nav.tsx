@@ -12,7 +12,6 @@ interface NavItem {
 const navItems: NavItem[] = [
   { href: '/dashboard', label: 'Pendentes' },
   { href: '/approved', label: 'Aprovadas' },
-  { href: '/settings', label: 'Definições' },
 ]
 
 export function InternalNav() {

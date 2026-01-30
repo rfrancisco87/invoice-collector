@@ -102,11 +102,10 @@ export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormPr
       {/* Message Banner */}
       {message && (
         <div
-          className={`rounded-lg p-4 ${
-            message.type === 'success'
+          className={`rounded-lg p-4 ${message.type === 'success'
               ? 'bg-success/10 text-success'
               : 'bg-destructive/10 text-destructive'
-          }`}
+            }`}
         >
           <div className="flex items-center gap-2">
             {message.type === 'success' ? (
@@ -336,16 +335,6 @@ export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormPr
             </div>
           </div>
         </div>
-      </div>
-
-      {/* Info Banner */}
-      <div className="rounded-lg border border-info/30 bg-info/5 p-4">
-        <h3 className="text-sm font-medium text-foreground">Sobre a Sincronização Automática</h3>
-        <p className="mt-1 text-sm text-muted-foreground">
-          A sincronização automática requer configuração de um cron job para chamar{' '}
-          <code className="rounded bg-muted px-1 py-0.5 text-xs">/api/cron/sync</code>.
-          Consulte a documentação para instruções de configuração.
-        </p>
       </div>
 
       {/* Save Button */}
