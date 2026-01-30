@@ -2,7 +2,7 @@
 # CRITICAL: ENVIRONMENT VARIABLES
 # ===================================
 # NEVER COMMIT API KEYS OR SECRETS
-.env*.local
+.env.local
 .env.development.local
 .env.test.local
 .env.production.local
@@ -33,6 +33,7 @@
 # PRODUCTION
 # ===================================
 /build
+/docs
 
 # ===================================
 # MISC

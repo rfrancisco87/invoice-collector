@@ -1,65 +1,75 @@
 'use client'
 
 import { useState, Suspense } from 'react'
-import { useSearchParams, useRouter } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
-import { Mail, Lock, AlertCircle } from 'lucide-react'
+import { Mail, Lock, User, AlertCircle, CheckCircle } from 'lucide-react'
 import Link from 'next/link'
 
-function LoginForm() {
+function SignupForm() {
   const router = useRouter()
-  const searchParams = useSearchParams()
-  const redirectTo = searchParams.get('redirect') || '/dashboard'
-  const errorParam = searchParams.get('error')
 
+  const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState<string | null>(errorParam ? getErrorMessage(errorParam) : null)
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState(false)
   const [loading, setLoading] = useState(false)
 
-  function getErrorMessage(code: string): string {
-    const messages: Record<string, string> = {
-      oauth_failed: 'Falha na autenticação Google. Por favor tente novamente.',
-      auth_failed: 'Falha na autenticação. Por favor tente novamente.',
-      session_mismatch: 'Sessão expirada. Por favor inicie sessão novamente.',
-      invalid_credentials: 'Email ou palavra-passe inválidos.',
-    }
-    return messages[code] || 'Ocorreu um erro. Por favor tente novamente.'
-  }
-
-  const handleEmailLogin = async (e: React.FormEvent) => {
+  const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
+
+    // Validate passwords match
+    if (password !== confirmPassword) {
+      setError('As palavras-passe não coincidem.')
+      return
+    }
+
+    // Validate password strength
+    if (password.length < 6) {
+      setError('A palavra-passe deve ter pelo menos 6 caracteres.')
+      return
+    }
+
     setLoading(true)
 
     try {
       const supabase = createClient()
-      const { error } = await supabase.auth.signInWithPassword({
+      const { error } = await supabase.auth.signUp({
         email,
         password,
+        options: {
+          data: {
+            full_name: name,
+          },
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+        },
       })
 
       if (error) {
-        setError(error.message === 'Invalid login credentials'
-          ? 'Email ou palavra-passe inválidos.'
-          : error.message)
+        if (error.message.includes('already registered')) {
+          setError('Este email já está registado. Por favor inicie sessão.')
+        } else {
+          setError(error.message)
+        }
         return
       }
 
-      router.push(redirectTo)
-      router.refresh()
+      setSuccess(true)
     } catch (err) {
-      setError('Falha ao iniciar sessão. Por favor tente novamente.')
+      setError('Falha ao criar conta. Por favor tente novamente.')
     } finally {
       setLoading(false)
     }
   }
 
-  const handleGoogleLogin = async () => {
+  const handleGoogleSignup = async () => {
     setLoading(true)
     setError(null)
 
@@ -68,7 +78,7 @@ function LoginForm() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback?redirect=${encodeURIComponent(redirectTo)}`,
+          redirectTo: `${window.location.origin}/auth/callback`,
           queryParams: {
             access_type: 'offline',
             prompt: 'consent',
@@ -77,22 +87,51 @@ function LoginForm() {
       })
 
       if (error) {
-        setError('Falha ao iniciar sessão com Google.')
+        setError('Falha ao registar com Google.')
         setLoading(false)
       }
     } catch (err) {
-      setError('Falha ao iniciar sessão com Google.')
+      setError('Falha ao registar com Google.')
       setLoading(false)
     }
+  }
+
+  if (success) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
+              <CheckCircle className="h-6 w-6 text-green-600" />
+            </div>
+            <CardTitle className="text-2xl">Verifique o seu email</CardTitle>
+            <CardDescription>
+              Enviámos um link de confirmação para <strong>{email}</strong>
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="text-center text-sm text-muted-foreground">
+            <p>
+              Clique no link no email para ativar a sua conta.
+              Se não receber o email, verifique a pasta de spam.
+            </p>
+          </CardContent>
+          <CardFooter className="justify-center">
+            <Link href="/login">
+              <Button variant="outline">Voltar ao login</Button>
+            </Link>
+          </CardFooter>
+        </Card>
+      </div>
+    )
   }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Invoice Collector</CardTitle>
+          <CardTitle className="text-2xl">Criar conta</CardTitle>
           <CardDescription>
-            Inicie sessão para gerir as suas faturas
+            Registe-se para começar a gerir as suas faturas
           </CardDescription>
         </CardHeader>
 
@@ -104,7 +143,24 @@ function LoginForm() {
             </div>
           )}
 
-          <form onSubmit={handleEmailLogin} className="space-y-4">
+          <form onSubmit={handleSignup} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="name">Nome</Label>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="name"
+                  type="text"
+                  placeholder="O seu nome"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="pl-10"
+                  required
+                  disabled={loading}
+                />
+              </div>
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <div className="relative">
@@ -123,15 +179,7 @@ function LoginForm() {
             </div>
 
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password">Palavra-passe</Label>
-                <Link
-                  href="/forgot-password"
-                  className="text-sm text-primary hover:underline"
-                >
-                  Esqueceu-se?
-                </Link>
-              </div>
+              <Label htmlFor="password">Palavra-passe</Label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -142,13 +190,32 @@ function LoginForm() {
                   onChange={(e) => setPassword(e.target.value)}
                   className="pl-10"
                   required
+                  minLength={6}
+                  disabled={loading}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="confirmPassword">Confirmar palavra-passe</Label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="confirmPassword"
+                  type="password"
+                  placeholder="••••••••"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="pl-10"
+                  required
+                  minLength={6}
                   disabled={loading}
                 />
               </div>
             </div>
 
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? 'A entrar...' : 'Entrar'}
+              {loading ? 'A criar conta...' : 'Criar conta'}
             </Button>
           </form>
 
@@ -164,7 +231,7 @@ function LoginForm() {
           <Button
             variant="outline"
             className="w-full"
-            onClick={handleGoogleLogin}
+            onClick={handleGoogleSignup}
             disabled={loading}
           >
             <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
@@ -185,15 +252,15 @@ function LoginForm() {
                 d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
               />
             </svg>
-            Entrar com Google
+            Registar com Google
           </Button>
         </CardContent>
 
         <CardFooter className="flex flex-col space-y-4">
           <div className="text-center text-sm text-muted-foreground">
-            Não tem conta?{' '}
-            <Link href="/signup" className="font-medium text-primary hover:underline">
-              Criar conta
+            Já tem conta?{' '}
+            <Link href="/login" className="font-medium text-primary hover:underline">
+              Iniciar sessão
             </Link>
           </div>
         </CardFooter>
@@ -202,14 +269,14 @@ function LoginForm() {
   )
 }
 
-export default function LoginPage() {
+export default function SignupPage() {
   return (
     <Suspense fallback={
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
       </div>
     }>
-      <LoginForm />
+      <SignupForm />
     </Suspense>
   )
 }

@@ -1,7 +1,11 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { ExternalLink, FileText, Calendar, User, FolderOpen } from 'lucide-react'
+import { ExternalLink, FileText, Calendar, User, FolderOpen, Search } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Button } from '@/components/ui/button'
 
 interface Document {
   id: string
@@ -10,7 +14,7 @@ interface Document {
   sender_domain: string
   subject: string
   received_date: string
-  final_classification: 'invoice' | 'credit_note' | 'other'
+  final_classification: 'invoice' | 'credit_note' | 'unclassified'
   confidence_score: number
   drive_file_id: string | null
   drive_folder_path: string | null
@@ -26,11 +30,9 @@ export function ApprovedDocumentList({ documents }: ApprovedDocumentListProps) {
   const [filterClassification, setFilterClassification] = useState<string>('all')
   const [sortBy, setSortBy] = useState<'date' | 'sender' | 'filename'>('date')
 
-  // Filter and sort documents
   const filteredDocuments = useMemo(() => {
     let filtered = documents
 
-    // Apply search filter
     if (searchTerm) {
       const search = searchTerm.toLowerCase()
       filtered = filtered.filter(
@@ -42,12 +44,10 @@ export function ApprovedDocumentList({ documents }: ApprovedDocumentListProps) {
       )
     }
 
-    // Apply classification filter
     if (filterClassification !== 'all') {
       filtered = filtered.filter(doc => doc.final_classification === filterClassification)
     }
 
-    // Apply sorting
     filtered = [...filtered].sort((a, b) => {
       switch (sortBy) {
         case 'date':
@@ -64,39 +64,24 @@ export function ApprovedDocumentList({ documents }: ApprovedDocumentListProps) {
     return filtered
   }, [documents, searchTerm, filterClassification, sortBy])
 
-  const getClassificationBadge = (classification: string) => {
-    switch (classification) {
-      case 'invoice':
-        return 'bg-green-100 text-green-800'
-      case 'credit_note':
-        return 'bg-orange-100 text-orange-800'
-      case 'other':
-        return 'bg-gray-100 text-gray-800'
-      default:
-        return 'bg-gray-100 text-gray-800'
-    }
-  }
-
   const getClassificationLabel = (classification: string) => {
     switch (classification) {
       case 'invoice':
-        return 'Invoice'
+        return 'Fatura'
       case 'credit_note':
-        return 'Credit Note'
-      case 'other':
-        return 'Other'
+        return 'Nota de Crédito'
       default:
-        return classification
+        return 'Outro'
     }
   }
 
   if (documents.length === 0) {
     return (
       <div className="px-6 py-12 text-center">
-        <FileText className="mx-auto h-12 w-12 text-gray-400" />
-        <h3 className="mt-2 text-sm font-medium text-gray-900">No approved documents</h3>
-        <p className="mt-1 text-sm text-gray-500">
-          Documents you approve will appear here.
+        <FileText className="mx-auto h-12 w-12 text-muted-foreground" />
+        <h3 className="mt-2 text-sm font-medium text-foreground">Sem documentos aprovados</h3>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Os documentos que aprovar aparecerão aqui.
         </p>
       </div>
     )
@@ -105,130 +90,124 @@ export function ApprovedDocumentList({ documents }: ApprovedDocumentListProps) {
   return (
     <div>
       {/* Filters */}
-      <div className="border-b bg-gray-50 px-6 py-4">
+      <div className="border-b border-border bg-muted/50 px-6 py-4">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          {/* Search */}
           <div>
-            <label htmlFor="search" className="block text-xs font-medium text-gray-700">
-              Search
-            </label>
-            <input
-              type="text"
-              id="search"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search by filename, sender, or subject..."
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-blue-500"
-            />
+            <Label htmlFor="search" className="text-xs">Pesquisar</Label>
+            <div className="relative mt-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                type="text"
+                id="search"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Pesquisar por nome, remetente ou assunto..."
+                className="pl-9"
+              />
+            </div>
           </div>
 
-          {/* Classification Filter */}
           <div>
-            <label htmlFor="classification" className="block text-xs font-medium text-gray-700">
-              Classification
-            </label>
+            <Label htmlFor="classification" className="text-xs">Classificação</Label>
             <select
               id="classification"
               value={filterClassification}
               onChange={(e) => setFilterClassification(e.target.value)}
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-blue-500"
+              className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
             >
-              <option value="all">All Classifications</option>
-              <option value="invoice">Invoices</option>
-              <option value="credit_note">Credit Notes</option>
-              <option value="other">Other</option>
+              <option value="all">Todas as classificações</option>
+              <option value="invoice">Faturas</option>
+              <option value="credit_note">Notas de Crédito</option>
+              <option value="unclassified">Outros</option>
             </select>
           </div>
 
-          {/* Sort By */}
           <div>
-            <label htmlFor="sortBy" className="block text-xs font-medium text-gray-700">
-              Sort By
-            </label>
+            <Label htmlFor="sortBy" className="text-xs">Ordenar por</Label>
             <select
               id="sortBy"
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as 'date' | 'sender' | 'filename')}
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-blue-500"
+              className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
             >
-              <option value="date">Date (Newest First)</option>
-              <option value="sender">Sender (A-Z)</option>
-              <option value="filename">Filename (A-Z)</option>
+              <option value="date">Data (Mais recente)</option>
+              <option value="sender">Remetente (A-Z)</option>
+              <option value="filename">Nome do ficheiro (A-Z)</option>
             </select>
           </div>
         </div>
 
-        {/* Results count */}
-        <div className="mt-3 text-sm text-gray-600">
-          Showing {filteredDocuments.length} of {documents.length} documents
+        <div className="mt-3 text-sm text-muted-foreground">
+          A mostrar {filteredDocuments.length} de {documents.length} documentos
         </div>
       </div>
 
       {/* Document List */}
-      <div className="divide-y">
+      <div className="divide-y divide-border">
         {filteredDocuments.length === 0 ? (
           <div className="px-6 py-12 text-center">
-            <p className="text-sm text-gray-500">No documents match your filters.</p>
+            <p className="text-sm text-muted-foreground">Nenhum documento corresponde aos filtros.</p>
           </div>
         ) : (
           filteredDocuments.map((doc) => (
-            <div key={doc.id} className="px-6 py-4 hover:bg-gray-50">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  {/* Filename and Classification */}
-                  <div className="flex items-center gap-3">
-                    <FileText className="h-5 w-5 text-gray-400" />
-                    <h3 className="font-medium text-gray-900">{doc.filename}</h3>
-                    <span
-                      className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${getClassificationBadge(
-                        doc.final_classification
-                      )}`}
+            <div key={doc.id} className="px-6 py-4 hover:bg-muted/50 transition-colors">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
+                    <h3 className="font-medium text-foreground truncate">{doc.filename}</h3>
+                    <Badge
+                      variant={
+                        doc.final_classification === 'invoice'
+                          ? 'success'
+                          : doc.final_classification === 'credit_note'
+                          ? 'warning'
+                          : 'secondary'
+                      }
                     >
                       {getClassificationLabel(doc.final_classification)}
-                    </span>
-                    <span className="text-xs text-gray-500">
-                      {Math.round(doc.confidence_score * 100)}% confidence
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">
+                      {Math.round(doc.confidence_score * 100)}% confiança
                     </span>
                   </div>
 
-                  {/* Details */}
                   <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <User className="h-4 w-4" />
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <User className="h-4 w-4 shrink-0" />
                       <span className="truncate">{doc.sender}</span>
                     </div>
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <Calendar className="h-4 w-4" />
-                      <span>{new Date(doc.received_date).toLocaleDateString()}</span>
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Calendar className="h-4 w-4 shrink-0" />
+                      <span>{new Date(doc.received_date).toLocaleDateString('pt-PT')}</span>
                     </div>
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <FolderOpen className="h-4 w-4" />
-                      <span className="truncate">{doc.drive_folder_path || 'Unknown'}</span>
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <FolderOpen className="h-4 w-4 shrink-0" />
+                      <span className="truncate">{doc.drive_folder_path || 'Desconhecido'}</span>
                     </div>
                     {doc.approved_at && (
-                      <div className="flex items-center gap-2 text-sm text-green-600">
-                        <Calendar className="h-4 w-4" />
-                        <span>Approved {new Date(doc.approved_at).toLocaleDateString()}</span>
+                      <div className="flex items-center gap-2 text-sm text-success">
+                        <Calendar className="h-4 w-4 shrink-0" />
+                        <span>Aprovado em {new Date(doc.approved_at).toLocaleDateString('pt-PT')}</span>
                       </div>
                     )}
                   </div>
 
-                  {/* Subject */}
-                  <p className="mt-2 text-sm text-gray-500 line-clamp-1">{doc.subject}</p>
+                  <p className="mt-2 text-sm text-muted-foreground line-clamp-1">{doc.subject}</p>
                 </div>
 
-                {/* Actions */}
-                <div className="ml-4 flex items-center gap-2">
+                <div className="shrink-0">
                   {doc.drive_file_id && (
-                    <a
-                      href={`https://drive.google.com/file/d/${doc.drive_file_id}/view`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
-                    >
-                      <ExternalLink className="h-4 w-4" />
-                      View in Drive
-                    </a>
+                    <Button asChild variant="default" size="sm">
+                      <a
+                        href={`https://drive.google.com/file/d/${doc.drive_file_id}/view`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <ExternalLink className="mr-2 h-4 w-4" />
+                        Ver no Drive
+                      </a>
+                    </Button>
                   )}
                 </div>
               </div>

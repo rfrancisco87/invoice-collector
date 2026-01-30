@@ -10,10 +10,84 @@ export type DocumentClassification = 'invoice' | 'credit_note' | 'unclassified'
 export type DocumentStatus = 'pending' | 'approved' | 'rejected'
 export type SyncStatus = 'running' | 'completed' | 'failed'
 export type FeedbackAction = 'approved' | 'rejected' | 'reclassified'
+export type UserRole = 'user' | 'admin'
+
+// Profile type for user management
+export interface Profile {
+  id: string
+  email: string
+  full_name: string | null
+  avatar_url: string | null
+  role: UserRole
+  created_at: string
+  updated_at: string
+}
+
+// Admin statistics (aggregate data only)
+export interface AdminStats {
+  total_users: number
+  connected_accounts: number
+  active_syncs: number
+  syncs_completed_today: number
+  syncs_failed_today: number
+  documents_processed_today: number
+  total_pending_documents: number
+  total_approved_documents: number
+  total_rejected_documents: number
+  active_users_today: number
+  total_documents_found_today: number
+  total_duplicates_skipped_today: number
+}
+
+// Admin sync log entry
+export interface AdminSyncLog {
+  id: string
+  user_id: string
+  user_email: string | null
+  status: SyncStatus
+  sync_from_date: string
+  sync_to_date: string
+  emails_scanned: number
+  documents_found: number
+  duplicates_skipped: number
+  started_at: string
+  completed_at: string | null
+  error_message: string | null
+  duration_seconds: number | null
+}
 
 export interface Database {
   public: {
     Tables: {
+      profiles: {
+        Row: {
+          id: string
+          email: string
+          full_name: string | null
+          avatar_url: string | null
+          role: UserRole
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id: string
+          email: string
+          full_name?: string | null
+          avatar_url?: string | null
+          role?: UserRole
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          email?: string
+          full_name?: string | null
+          avatar_url?: string | null
+          role?: UserRole
+          created_at?: string
+          updated_at?: string
+        }
+      }
       gmail_accounts: {
         Row: {
           id: string
@@ -328,10 +402,18 @@ export interface Database {
       }
     }
     Views: {
-      [_ in never]: never
+      admin_stats: {
+        Row: AdminStats
+      }
+      admin_sync_logs: {
+        Row: AdminSyncLog
+      }
     }
     Functions: {
-      [_ in never]: never
+      is_admin: {
+        Args: Record<string, never>
+        Returns: boolean
+      }
     }
     Enums: {
       document_classification: DocumentClassification

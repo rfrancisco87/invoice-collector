@@ -58,7 +58,14 @@ export async function PATCH(request: Request) {
     if (notification_email !== undefined) updates.notification_email = notification_email
     if (gmail_sync_label !== undefined) updates.gmail_sync_label = gmail_sync_label || null
     if (archive_synced_emails !== undefined) updates.archive_synced_emails = archive_synced_emails
-    if (subscription_tier !== undefined) updates.subscription_tier = subscription_tier
+    if (subscription_tier !== undefined) {
+      updates.subscription_tier = subscription_tier
+      // Automatically set sync frequency based on subscription tier
+      updates.sync_frequency_minutes = subscription_tier === 'paid' ? 15 : 720
+    }
+
+    console.log('[Settings API] Updating settings for user:', user.id)
+    console.log('[Settings API] Updates:', JSON.stringify(updates, null, 2))
 
     const { data: settings, error } = await supabase
       .from('user_settings')
@@ -68,7 +75,13 @@ export async function PATCH(request: Request) {
       .single()
 
     if (error) {
-      return NextResponse.json({ error: 'Failed to update settings', details: error.message }, { status: 500 })
+      console.error('[Settings API] Supabase error:', error)
+      return NextResponse.json({
+        error: 'Failed to update settings',
+        details: error.message,
+        code: error.code,
+        hint: error.hint
+      }, { status: 500 })
     }
 
     return NextResponse.json({ settings })

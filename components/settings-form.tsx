@@ -2,7 +2,10 @@
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Bell, Mail, Clock, Check, Tag, Archive } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Bell, Mail, Clock, Check, Tag, Archive, AlertCircle } from 'lucide-react'
+import Link from 'next/link'
 
 interface Settings {
   sync_days_back: number
@@ -19,9 +22,10 @@ interface Settings {
 interface SettingsFormProps {
   settings: Settings | null
   userEmail: string
+  gmailEmail?: string | null
 }
 
-export function SettingsForm({ settings, userEmail }: SettingsFormProps) {
+export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormProps) {
   const [formData, setFormData] = useState({
     sync_days_back: settings?.sync_days_back || 1,
     auto_sync_enabled: settings?.auto_sync_enabled ?? true,
@@ -47,19 +51,20 @@ export function SettingsForm({ settings, userEmail }: SettingsFormProps) {
       })
 
       if (!response.ok) {
-        throw new Error('Failed to save settings')
+        const errorData = await response.json()
+        console.error('Settings save error:', errorData)
+        throw new Error(errorData.details || errorData.error || 'Falha ao guardar definições')
       }
 
-      setMessage({ type: 'success', text: 'Settings saved successfully!' })
+      setMessage({ type: 'success', text: 'Definições guardadas com sucesso!' })
 
-      // Reload the page to get updated data
       setTimeout(() => {
         window.location.reload()
       }, 1500)
     } catch (error) {
       setMessage({
         type: 'error',
-        text: error instanceof Error ? error.message : 'Failed to save settings',
+        text: error instanceof Error ? error.message : 'Falha ao guardar definições',
       })
     } finally {
       setIsSaving(false)
@@ -78,14 +83,14 @@ export function SettingsForm({ settings, userEmail }: SettingsFormProps) {
       })
 
       if (!response.ok) {
-        throw new Error('Failed to send test email')
+        throw new Error('Falha ao enviar email de teste')
       }
 
-      setMessage({ type: 'success', text: 'Test email sent! Check your inbox.' })
+      setMessage({ type: 'success', text: 'Email de teste enviado! Verifique a sua caixa de entrada.' })
     } catch (error) {
       setMessage({
         type: 'error',
-        text: error instanceof Error ? error.message : 'Failed to send test email',
+        text: error instanceof Error ? error.message : 'Falha ao enviar email de teste',
       })
     } finally {
       setIsSendingTest(false)
@@ -97,43 +102,90 @@ export function SettingsForm({ settings, userEmail }: SettingsFormProps) {
       {/* Message Banner */}
       {message && (
         <div
-          className={`rounded-lg p-4 ${message.type === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'
-            }`}
+          className={`rounded-lg p-4 ${
+            message.type === 'success'
+              ? 'bg-success/10 text-success'
+              : 'bg-destructive/10 text-destructive'
+          }`}
         >
           <div className="flex items-center gap-2">
-            {message.type === 'success' && <Check className="h-5 w-5" />}
+            {message.type === 'success' ? (
+              <Check className="h-5 w-5" />
+            ) : (
+              <AlertCircle className="h-5 w-5" />
+            )}
             <p className="text-sm font-medium">{message.text}</p>
           </div>
         </div>
       )}
 
-      {/* Sync Settings */}
-      <div className="rounded-lg bg-white p-6 shadow">
+      {/* Gmail Account Section */}
+      <div className="rounded-lg border bg-card p-6">
         <div className="flex items-center gap-3 mb-4">
-          <Clock className="h-6 w-6 text-blue-600" />
-          <h2 className="text-lg font-semibold text-gray-900">Sync Settings</h2>
+          <Mail className="h-6 w-6 text-primary" />
+          <h2 className="text-lg font-semibold text-foreground">Conta Gmail</h2>
+        </div>
+
+        {gmailEmail ? (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-foreground">{gmailEmail}</p>
+                <p className="text-sm text-muted-foreground">Conta Gmail conectada</p>
+              </div>
+              <div className="flex gap-2">
+                <Link href="/api/gmail/connect">
+                  <Button variant="outline" size="sm">Reconectar</Button>
+                </Link>
+                <Link href="/gmail-connect">
+                  <Button variant="ghost" size="sm">Gerir</Button>
+                </Link>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Se tiver problemas com a sincronização, clique em &quot;Reconectar&quot; para renovar as permissões.
+            </p>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              Nenhuma conta Gmail conectada
+            </p>
+            <Link href="/gmail-connect">
+              <Button size="sm">
+                <Mail className="mr-2 h-4 w-4" />
+                Conectar Gmail
+              </Button>
+            </Link>
+          </div>
+        )}
+      </div>
+
+      {/* Sync Settings */}
+      <div className="rounded-lg border bg-card p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <Clock className="h-6 w-6 text-primary" />
+          <h2 className="text-lg font-semibold text-foreground">Definições de Sincronização</h2>
         </div>
 
         <div className="space-y-4">
           <div>
-            <label htmlFor="sync_days_back" className="block text-sm font-medium text-gray-700">
-              Sync emails from the last (days)
-            </label>
+            <Label htmlFor="sync_days_back">Sincronizar emails dos últimos (dias)</Label>
             <select
               id="sync_days_back"
               value={formData.sync_days_back}
               onChange={(e) => setFormData({ ...formData, sync_days_back: parseInt(e.target.value) })}
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-blue-500"
+              className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
             >
-              <option value="1">1 day</option>
-              <option value="2">2 days</option>
-              <option value="3">3 days</option>
-              <option value="7">1 week</option>
-              <option value="14">2 weeks</option>
-              <option value="30">1 month</option>
+              <option value="1">1 dia</option>
+              <option value="2">2 dias</option>
+              <option value="3">3 dias</option>
+              <option value="7">1 semana</option>
+              <option value="14">2 semanas</option>
+              <option value="30">1 mês</option>
             </select>
-            <p className="mt-1 text-sm text-gray-500">
-              How far back to look for new invoices when syncing
+            <p className="mt-1 text-sm text-muted-foreground">
+              Quantos dias para trás procurar novas faturas ao sincronizar
             </p>
           </div>
 
@@ -144,54 +196,47 @@ export function SettingsForm({ settings, userEmail }: SettingsFormProps) {
                 type="checkbox"
                 checked={formData.auto_sync_enabled}
                 onChange={(e) => setFormData({ ...formData, auto_sync_enabled: e.target.checked })}
-                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                className="h-4 w-4 rounded border-input text-primary focus:ring-primary"
               />
             </div>
             <div className="ml-3">
-              <label htmlFor="auto_sync_enabled" className="font-medium text-gray-700">
-                Enable automatic sync
-              </label>
-              <p className="text-sm text-gray-500">
-                Automatically sync your emails every hour (requires cron job setup)
+              <Label htmlFor="auto_sync_enabled">Activar sincronização automática</Label>
+              <p className="text-sm text-muted-foreground">
+                Sincronizar automaticamente os seus emails (frequência depende do plano)
               </p>
               {settings?.last_auto_sync_at && (
-                <p className="mt-1 text-xs text-gray-400">
-                  Last auto-sync: {new Date(settings.last_auto_sync_at).toLocaleString()}
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Última sync automática: {new Date(settings.last_auto_sync_at).toLocaleString('pt-PT')}
                 </p>
               )}
             </div>
           </div>
 
-          <div className="pt-4 border-t border-gray-100">
-            <label htmlFor="subscription_tier" className="block text-sm font-medium text-gray-700">
-              Subscription Tier (Admin Control)
-            </label>
+          <div className="pt-4 border-t border-border">
+            <Label htmlFor="subscription_tier">Plano de Subscrição</Label>
             <div className="mt-1 flex items-center gap-4">
               <select
                 id="subscription_tier"
                 value={formData.subscription_tier}
                 onChange={(e) => setFormData({ ...formData, subscription_tier: e.target.value as 'free' | 'paid' })}
-                className="block w-full max-w-xs rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-blue-500"
+                className="block w-full max-w-xs rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               >
-                <option value="free">Free (Syncs every 12 hours)</option>
-                <option value="paid">Paid (Syncs every 15 minutes)</option>
+                <option value="free">Gratuito (Sync a cada 12 horas)</option>
+                <option value="paid">Pago (Sync a cada 15 minutos)</option>
               </select>
-              <div className="text-sm text-gray-500">
-                Current frequency: {formData.subscription_tier === 'paid' ? '15 minutes' : '720 minutes (12h)'}
-              </div>
             </div>
-            <p className="mt-1 text-sm text-gray-500">
-              In production, this would be managed by your billing system.
+            <p className="mt-1 text-sm text-muted-foreground">
+              Em produção, isto seria gerido pelo sistema de pagamentos.
             </p>
           </div>
         </div>
       </div>
 
       {/* Email Notifications */}
-      <div className="rounded-lg bg-white p-6 shadow">
+      <div className="rounded-lg border bg-card p-6">
         <div className="flex items-center gap-3 mb-4">
-          <Bell className="h-6 w-6 text-blue-600" />
-          <h2 className="text-lg font-semibold text-gray-900">Email Notifications</h2>
+          <Bell className="h-6 w-6 text-primary" />
+          <h2 className="text-lg font-semibold text-foreground">Notificações por Email</h2>
         </div>
 
         <div className="space-y-4">
@@ -204,76 +249,69 @@ export function SettingsForm({ settings, userEmail }: SettingsFormProps) {
                 onChange={(e) =>
                   setFormData({ ...formData, email_notifications_enabled: e.target.checked })
                 }
-                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                className="h-4 w-4 rounded border-input text-primary focus:ring-primary"
               />
             </div>
             <div className="ml-3">
-              <label htmlFor="email_notifications_enabled" className="font-medium text-gray-700">
-                Send email notifications
-              </label>
-              <p className="text-sm text-gray-500">
-                Get notified when new invoices are detected
+              <Label htmlFor="email_notifications_enabled">Enviar notificações por email</Label>
+              <p className="text-sm text-muted-foreground">
+                Receber notificação quando novas faturas forem detectadas
               </p>
             </div>
           </div>
 
           {formData.email_notifications_enabled && (
-            <div>
-              <label htmlFor="notification_email" className="block text-sm font-medium text-gray-700">
-                Notification email address
-              </label>
-              <input
-                type="email"
-                id="notification_email"
-                value={formData.notification_email}
-                onChange={(e) => setFormData({ ...formData, notification_email: e.target.value })}
-                placeholder={userEmail}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-blue-500"
-              />
-              <p className="mt-1 text-sm text-gray-500">
-                Leave blank to use your account email ({userEmail})
-              </p>
-            </div>
-          )}
+            <>
+              <div>
+                <Label htmlFor="notification_email">Email para notificações</Label>
+                <Input
+                  type="email"
+                  id="notification_email"
+                  value={formData.notification_email}
+                  onChange={(e) => setFormData({ ...formData, notification_email: e.target.value })}
+                  placeholder={userEmail}
+                  className="mt-1"
+                />
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Deixe em branco para usar o email da conta ({userEmail})
+                </p>
+              </div>
 
-          {formData.email_notifications_enabled && (
-            <div>
-              <Button
-                onClick={handleSendTestEmail}
-                disabled={isSendingTest}
-                variant="outline"
-                className="w-full sm:w-auto"
-              >
-                <Mail className="mr-2 h-4 w-4" />
-                {isSendingTest ? 'Sending...' : 'Send Test Email'}
-              </Button>
-            </div>
+              <div>
+                <Button
+                  onClick={handleSendTestEmail}
+                  disabled={isSendingTest}
+                  variant="outline"
+                >
+                  <Mail className="mr-2 h-4 w-4" />
+                  {isSendingTest ? 'A enviar...' : 'Enviar Email de Teste'}
+                </Button>
+              </div>
+            </>
           )}
         </div>
       </div>
 
       {/* Gmail Settings */}
-      <div className="rounded-lg bg-white p-6 shadow">
+      <div className="rounded-lg border bg-card p-6">
         <div className="flex items-center gap-3 mb-4">
-          <Tag className="h-6 w-6 text-blue-600" />
-          <h2 className="text-lg font-semibold text-gray-900">Gmail Settings</h2>
+          <Tag className="h-6 w-6 text-primary" />
+          <h2 className="text-lg font-semibold text-foreground">Definições do Gmail</h2>
         </div>
 
         <div className="space-y-4">
           <div>
-            <label htmlFor="gmail_sync_label" className="block text-sm font-medium text-gray-700">
-              Gmail Label for Synced Emails
-            </label>
-            <input
+            <Label htmlFor="gmail_sync_label">Etiqueta Gmail para Emails Sincronizados</Label>
+            <Input
               type="text"
               id="gmail_sync_label"
               value={formData.gmail_sync_label}
               onChange={(e) => setFormData({ ...formData, gmail_sync_label: e.target.value })}
               placeholder="Invoice Collector - Synced"
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-blue-500"
+              className="mt-1"
             />
-            <p className="mt-1 text-sm text-gray-500">
-              This label will be created in Gmail and applied to all synced emails. Leave empty to disable labeling.
+            <p className="mt-1 text-sm text-muted-foreground">
+              Esta etiqueta será criada no Gmail e aplicada a todos os emails sincronizados.
             </p>
           </div>
 
@@ -284,16 +322,16 @@ export function SettingsForm({ settings, userEmail }: SettingsFormProps) {
                 type="checkbox"
                 checked={formData.archive_synced_emails}
                 onChange={(e) => setFormData({ ...formData, archive_synced_emails: e.target.checked })}
-                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                className="h-4 w-4 rounded border-input text-primary focus:ring-primary"
               />
             </div>
             <div className="ml-3">
-              <label htmlFor="archive_synced_emails" className="font-medium text-gray-700">
-                <Archive className="inline h-4 w-4 mr-1" />
-                Archive synced emails
-              </label>
-              <p className="text-sm text-gray-500">
-                Remove synced emails from your inbox. Emails will still be accessible in Gmail under "All Mail".
+              <Label htmlFor="archive_synced_emails" className="flex items-center gap-1">
+                <Archive className="h-4 w-4" />
+                Arquivar emails sincronizados
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                Remover emails sincronizados da caixa de entrada. Continuarão acessíveis em &quot;Todos os emails&quot;.
               </p>
             </div>
           </div>
@@ -301,19 +339,19 @@ export function SettingsForm({ settings, userEmail }: SettingsFormProps) {
       </div>
 
       {/* Info Banner */}
-      <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
-        <h3 className="text-sm font-medium text-blue-900">About Automatic Sync</h3>
-        <p className="mt-1 text-sm text-blue-700">
-          Automatic sync requires setting up a cron job to call{' '}
-          <code className="rounded bg-blue-100 px-1 py-0.5 text-xs">/api/cron/sync</code> hourly.
-          See documentation for setup instructions.
+      <div className="rounded-lg border border-info/30 bg-info/5 p-4">
+        <h3 className="text-sm font-medium text-foreground">Sobre a Sincronização Automática</h3>
+        <p className="mt-1 text-sm text-muted-foreground">
+          A sincronização automática requer configuração de um cron job para chamar{' '}
+          <code className="rounded bg-muted px-1 py-0.5 text-xs">/api/cron/sync</code>.
+          Consulte a documentação para instruções de configuração.
         </p>
       </div>
 
       {/* Save Button */}
       <div className="flex justify-end">
         <Button onClick={handleSave} disabled={isSaving} className="px-8">
-          {isSaving ? 'Saving...' : 'Save Settings'}
+          {isSaving ? 'A guardar...' : 'Guardar Definições'}
         </Button>
       </div>
     </div>

@@ -3,6 +3,10 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { FolderOpen, Plus, Check, AlertCircle } from 'lucide-react'
 
 interface DriveFolder {
   id: string
@@ -30,13 +34,13 @@ export default function SetupPage() {
       const response = await fetch('/api/drive/folders')
 
       if (!response.ok) {
-        throw new Error('Failed to load folders')
+        throw new Error('Falha ao carregar pastas')
       }
 
       const data = await response.json()
       setFolders(data.folders || [])
     } catch (err) {
-      setError('Failed to load Drive folders. Please try again.')
+      setError('Falha ao carregar pastas do Drive. Por favor tente novamente.')
       console.error('Error loading folders:', err)
     } finally {
       setIsLoading(false)
@@ -45,7 +49,7 @@ export default function SetupPage() {
 
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) {
-      setError('Please enter a folder name')
+      setError('Por favor introduza um nome para a pasta')
       return
     }
 
@@ -60,13 +64,13 @@ export default function SetupPage() {
       })
 
       if (!response.ok) {
-        throw new Error('Failed to create folder')
+        throw new Error('Falha ao criar pasta')
       }
 
       const data = await response.json()
       await saveSelection(data.folder.id, data.folder.name, data.folder.path)
     } catch (err) {
-      setError('Failed to create folder. Please try again.')
+      setError('Falha ao criar pasta. Por favor tente novamente.')
       console.error('Error creating folder:', err)
       setIsLoading(false)
     }
@@ -74,7 +78,7 @@ export default function SetupPage() {
 
   const handleSelectFolder = async () => {
     if (!selectedFolder) {
-      setError('Please select a folder')
+      setError('Por favor seleccione uma pasta')
       return
     }
 
@@ -100,69 +104,71 @@ export default function SetupPage() {
       })
 
       if (!response.ok) {
-        throw new Error('Failed to save folder selection')
+        throw new Error('Falha ao guardar selecção')
       }
 
       router.push('/dashboard')
     } catch (err) {
-      setError('Failed to save selection. Please try again.')
+      setError('Falha ao guardar selecção. Por favor tente novamente.')
       console.error('Error saving selection:', err)
       setIsLoading(false)
     }
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-background">
       <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900">
-            Setup Google Drive
+        <div className="mb-8 text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+            <FolderOpen className="h-6 w-6 text-primary" />
+          </div>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">
+            Configurar Google Drive
           </h1>
-          <p className="mt-2 text-sm text-gray-600">
-            Choose where to store your invoices in Google Drive
+          <p className="mt-2 text-muted-foreground">
+            Escolha onde guardar as suas faturas no Google Drive
           </p>
         </div>
 
         {error && (
-          <div className="mb-6 rounded-lg bg-red-50 p-4">
-            <p className="text-sm text-red-800">{error}</p>
+          <div className="mb-6 flex items-center gap-2 rounded-lg bg-destructive/10 p-4 text-destructive">
+            <AlertCircle className="h-5 w-5 shrink-0" />
+            <p className="text-sm">{error}</p>
           </div>
         )}
 
         <div className="space-y-6">
           {/* Create New Folder Option */}
-          <div className="rounded-lg bg-white p-6 shadow">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">
-                  Create New Folder
-                </h2>
-                <p className="mt-1 text-sm text-gray-600">
-                  We'll create a new folder in your Google Drive with the necessary structure
-                </p>
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Criar Nova Pasta</CardTitle>
+                  <CardDescription>
+                    Vamos criar uma nova pasta no seu Google Drive com a estrutura necessária
+                  </CardDescription>
+                </div>
+                <Button
+                  onClick={() => setShowCreateNew(!showCreateNew)}
+                  variant="outline"
+                  size="sm"
+                >
+                  {showCreateNew ? 'Cancelar' : 'Criar Nova'}
+                </Button>
               </div>
-              <Button
-                onClick={() => setShowCreateNew(!showCreateNew)}
-                variant="outline"
-                size="sm"
-              >
-                {showCreateNew ? 'Cancel' : 'Create New'}
-              </Button>
-            </div>
+            </CardHeader>
 
             {showCreateNew && (
-              <div className="mt-4 space-y-4">
+              <CardContent className="space-y-4">
                 <div>
-                  <label htmlFor="folderName" className="block text-sm font-medium text-gray-700">
-                    Folder Name
-                  </label>
-                  <input
+                  <Label htmlFor="folderName">Nome da Pasta</Label>
+                  <Input
                     type="text"
                     id="folderName"
                     value={newFolderName}
                     onChange={(e) => setNewFolderName(e.target.value)}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-blue-500"
                     placeholder="Invoice Collector"
+                    className="mt-1"
                   />
                 </div>
                 <Button
@@ -170,40 +176,40 @@ export default function SetupPage() {
                   disabled={isLoading}
                   className="w-full"
                 >
-                  {isLoading ? 'Creating...' : 'Create Folder and Continue'}
+                  <Plus className="mr-2 h-4 w-4" />
+                  {isLoading ? 'A criar...' : 'Criar Pasta e Continuar'}
                 </Button>
-              </div>
+              </CardContent>
             )}
-          </div>
+          </Card>
 
           {/* Divider */}
           <div className="relative">
             <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-300" />
+              <div className="w-full border-t border-border" />
             </div>
             <div className="relative flex justify-center text-sm">
-              <span className="bg-gray-50 px-2 text-gray-500">or</span>
+              <span className="bg-background px-2 text-muted-foreground">ou</span>
             </div>
           </div>
 
           {/* Select Existing Folder Option */}
-          <div className="rounded-lg bg-white p-6 shadow">
-            <h2 className="text-lg font-semibold text-gray-900">
-              Select Existing Folder
-            </h2>
-            <p className="mt-1 text-sm text-gray-600">
-              Choose an existing folder from your Google Drive
-            </p>
-
-            <div className="mt-4 space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Seleccionar Pasta Existente</CardTitle>
+              <CardDescription>
+                Escolha uma pasta existente do seu Google Drive
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
               {isLoading && folders.length === 0 ? (
                 <div className="text-center py-8">
-                  <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-r-transparent"></div>
-                  <p className="mt-2 text-sm text-gray-600">Loading folders...</p>
+                  <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-primary border-r-transparent"></div>
+                  <p className="mt-2 text-sm text-muted-foreground">A carregar pastas...</p>
                 </div>
               ) : folders.length === 0 ? (
-                <p className="text-sm text-gray-500 text-center py-4">
-                  No folders found. Create a new folder above.
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  Nenhuma pasta encontrada. Crie uma nova pasta acima.
                 </p>
               ) : (
                 <>
@@ -213,8 +219,8 @@ export default function SetupPage() {
                         key={folder.id}
                         className={`flex cursor-pointer items-center rounded-lg border p-4 transition-colors ${
                           selectedFolder === folder.id
-                            ? 'border-blue-500 bg-blue-50'
-                            : 'border-gray-200 hover:bg-gray-50'
+                            ? 'border-primary bg-primary/5'
+                            : 'border-border hover:bg-muted/50'
                         }`}
                       >
                         <input
@@ -223,12 +229,21 @@ export default function SetupPage() {
                           value={folder.id}
                           checked={selectedFolder === folder.id}
                           onChange={(e) => setSelectedFolder(e.target.value)}
-                          className="h-4 w-4 text-blue-600"
+                          className="sr-only"
                         />
+                        <div className={`flex h-5 w-5 items-center justify-center rounded-full border ${
+                          selectedFolder === folder.id
+                            ? 'border-primary bg-primary'
+                            : 'border-muted-foreground'
+                        }`}>
+                          {selectedFolder === folder.id && (
+                            <Check className="h-3 w-3 text-primary-foreground" />
+                          )}
+                        </div>
                         <div className="ml-3">
-                          <p className="font-medium text-gray-900">{folder.name}</p>
+                          <p className="font-medium text-foreground">{folder.name}</p>
                           {folder.path && (
-                            <p className="text-sm text-gray-500">{folder.path}</p>
+                            <p className="text-sm text-muted-foreground">{folder.path}</p>
                           )}
                         </div>
                       </label>
@@ -239,18 +254,18 @@ export default function SetupPage() {
                     disabled={!selectedFolder || isLoading}
                     className="w-full"
                   >
-                    {isLoading ? 'Saving...' : 'Continue with Selected Folder'}
+                    {isLoading ? 'A guardar...' : 'Continuar com a Pasta Seleccionada'}
                   </Button>
                 </>
               )}
-            </div>
-          </div>
+            </CardContent>
+          </Card>
         </div>
 
-        <div className="mt-8 rounded-lg border border-blue-200 bg-blue-50 p-4">
-          <p className="text-sm text-blue-900">
-            <strong>What happens next:</strong> We'll create a "Pending Approval" subfolder where new invoices will be saved.
-            When you approve an invoice, it will be moved to "Approved/MM-YYYY" folders organized by month.
+        <div className="mt-8 rounded-lg border border-info/30 bg-info/5 p-4">
+          <p className="text-sm text-foreground">
+            <strong>O que acontece a seguir:</strong> Vamos criar uma subpasta &quot;Pendentes&quot; onde as novas faturas serão guardadas.
+            Quando aprovar uma fatura, ela será movida para pastas &quot;Aprovados/MM-AAAA&quot; organizadas por mês.
           </p>
         </div>
       </div>

@@ -2,7 +2,10 @@
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { useRouter } from 'next/navigation'
+import { ExternalLink, FileText, AlertCircle } from 'lucide-react'
+import toast from 'react-hot-toast'
 
 interface Document {
   id: string
@@ -42,13 +45,14 @@ export function DocumentList({ documents }: DocumentListProps) {
       })
 
       if (!response.ok) {
-        throw new Error('Action failed')
+        throw new Error('Falha na acção')
       }
 
+      toast.success(action === 'approve' ? 'Documento aprovado' : 'Documento rejeitado')
       router.refresh()
     } catch (error) {
       console.error('Action error:', error)
-      alert(`Failed to ${action} document. Please try again.`)
+      toast.error(`Falha ao ${action === 'approve' ? 'aprovar' : 'rejeitar'} documento.`)
     } finally {
       setProcessingId(null)
     }
@@ -65,13 +69,14 @@ export function DocumentList({ documents }: DocumentListProps) {
       })
 
       if (!response.ok) {
-        throw new Error('Reclassify failed')
+        throw new Error('Falha na reclassificação')
       }
 
+      toast.success('Documento reclassificado')
       router.refresh()
     } catch (error) {
       console.error('Reclassify error:', error)
-      alert('Failed to reclassify document. Please try again.')
+      toast.error('Falha ao reclassificar documento.')
     }
   }
 
@@ -86,13 +91,14 @@ export function DocumentList({ documents }: DocumentListProps) {
       })
 
       if (!response.ok) {
-        throw new Error('Reprocess failed')
+        throw new Error('Falha no reprocessamento')
       }
 
+      toast.success('Webhook reprocessado')
       router.refresh()
     } catch (error) {
       console.error('Reprocess error:', error)
-      alert('Failed to reprocess document. Please try again.')
+      toast.error('Falha ao reprocessar documento.')
     } finally {
       setReprocessingId(null)
     }
@@ -102,81 +108,79 @@ export function DocumentList({ documents }: DocumentListProps) {
     window.open(`https://drive.google.com/file/d/${driveFileId}/view`, '_blank')
   }
 
+  const getClassificationLabel = (classification: string) => {
+    switch (classification) {
+      case 'invoice':
+        return 'Fatura'
+      case 'credit_note':
+        return 'Nota de Crédito'
+      default:
+        return 'Não classificado'
+    }
+  }
+
   if (documents.length === 0) {
     return (
       <div className="px-6 py-12 text-center">
-        <svg
-          className="mx-auto h-12 w-12 text-gray-400"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-          />
-        </svg>
-        <h3 className="mt-2 text-sm font-medium text-gray-900">No pending documents</h3>
-        <p className="mt-1 text-sm text-gray-500">
-          Click "Sync Emails" to scan your Gmail for new invoices.
+        <FileText className="mx-auto h-12 w-12 text-muted-foreground" />
+        <h3 className="mt-2 text-sm font-medium text-foreground">Sem documentos pendentes</h3>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Clique em &quot;Sincronizar&quot; para procurar novas faturas.
         </p>
       </div>
     )
   }
 
   return (
-    <div className="divide-y">
+    <div className="divide-y divide-border">
       {documents.map((doc) => (
-        <div key={doc.id} className="px-6 py-4 hover:bg-gray-50">
-          <div className="flex items-start justify-between">
-            <div className="flex-1">
-              <div className="flex items-center gap-3">
-                <h3 className="font-medium text-gray-900">{doc.filename}</h3>
-                <span
-                  className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${
+        <div key={doc.id} className="px-6 py-4 hover:bg-muted/50 transition-colors">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-3 flex-wrap">
+                <h3 className="font-medium text-foreground truncate">{doc.filename}</h3>
+                <Badge
+                  variant={
                     doc.final_classification === 'invoice'
-                      ? 'bg-blue-100 text-blue-800'
+                      ? 'info'
                       : doc.final_classification === 'credit_note'
-                      ? 'bg-purple-100 text-purple-800'
-                      : 'bg-gray-100 text-gray-800'
-                  }`}
+                      ? 'warning'
+                      : 'secondary'
+                  }
                 >
-                  {doc.final_classification === 'invoice'
-                    ? 'Invoice'
-                    : doc.final_classification === 'credit_note'
-                    ? 'Credit Note'
-                    : 'Unclassified'}
-                </span>
+                  {getClassificationLabel(doc.final_classification)}
+                </Badge>
                 {doc.was_reclassified && (
-                  <span className="inline-flex rounded-full bg-yellow-100 px-2 py-1 text-xs font-semibold text-yellow-800">
-                    Reclassified
-                  </span>
+                  <Badge variant="warning">Reclassificado</Badge>
                 )}
                 {doc.webhook_error && (
-                  <span className="inline-flex rounded-full bg-red-100 px-2 py-1 text-xs font-semibold text-red-800">
-                    Webhook Error
-                  </span>
+                  <Badge variant="destructive" className="gap-1">
+                    <AlertCircle className="h-3 w-3" />
+                    Erro Webhook
+                  </Badge>
                 )}
               </div>
-              <div className="mt-1 text-sm text-gray-600">
+              <div className="mt-2 text-sm text-muted-foreground space-y-1">
                 <p>
-                  From: <span className="font-medium">{doc.sender}</span> ({doc.sender_domain})
+                  De: <span className="font-medium text-foreground">{doc.sender}</span>{' '}
+                  <span className="text-muted-foreground">({doc.sender_domain})</span>
                 </p>
-                <p>Subject: {doc.subject}</p>
-                <p>Received: {new Date(doc.received_date).toLocaleString()}</p>
-                <p>Confidence: {(doc.confidence_score * 100).toFixed(0)}%</p>
+                <p className="truncate">Assunto: {doc.subject}</p>
+                <p>
+                  Recebido: {new Date(doc.received_date).toLocaleString('pt-PT')} | Confiança:{' '}
+                  {(doc.confidence_score * 100).toFixed(0)}%
+                </p>
               </div>
             </div>
 
-            <div className="ml-4 flex flex-col gap-2">
+            <div className="flex flex-col gap-2 shrink-0">
               <Button
                 onClick={() => openInDrive(doc.drive_file_id)}
                 variant="outline"
                 size="sm"
               >
-                View PDF
+                <ExternalLink className="mr-2 h-4 w-4" />
+                Ver PDF
               </Button>
 
               {reclassifyingId === doc.id ? (
@@ -186,21 +190,21 @@ export function DocumentList({ documents }: DocumentListProps) {
                     variant="outline"
                     size="sm"
                   >
-                    → Invoice
+                    → Fatura
                   </Button>
                   <Button
                     onClick={() => handleReclassify(doc.id, 'credit_note')}
                     variant="outline"
                     size="sm"
                   >
-                    → Credit Note
+                    → Nota de Crédito
                   </Button>
                   <Button
                     onClick={() => setReclassifyingId(null)}
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
                   >
-                    Cancel
+                    Cancelar
                   </Button>
                 </div>
               ) : (
@@ -211,7 +215,7 @@ export function DocumentList({ documents }: DocumentListProps) {
                     variant="default"
                     size="sm"
                   >
-                    {processingId === doc.id ? 'Processing...' : 'Approve'}
+                    {processingId === doc.id ? 'A processar...' : 'Aprovar'}
                   </Button>
                   <Button
                     onClick={() => handleAction(doc.id, 'reject')}
@@ -219,7 +223,7 @@ export function DocumentList({ documents }: DocumentListProps) {
                     variant="destructive"
                     size="sm"
                   >
-                    Reject
+                    Rejeitar
                   </Button>
                   <Button
                     onClick={() => setReclassifyingId(doc.id)}
@@ -227,7 +231,7 @@ export function DocumentList({ documents }: DocumentListProps) {
                     variant="outline"
                     size="sm"
                   >
-                    Reclassify
+                    Reclassificar
                   </Button>
                   {doc.webhook_error && (
                     <Button
@@ -236,7 +240,7 @@ export function DocumentList({ documents }: DocumentListProps) {
                       variant="outline"
                       size="sm"
                     >
-                      {reprocessingId === doc.id ? 'Reprocessing...' : 'Reprocess'}
+                      {reprocessingId === doc.id ? 'A reprocessar...' : 'Reprocessar'}
                     </Button>
                   )}
                 </>
