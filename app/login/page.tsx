@@ -89,8 +89,8 @@ function LoginForm() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Invoice Collector</CardTitle>
+        <CardHeader className="text-center space-y-2">
+          <CardTitle className="text-2xl font-bold tracking-tight">Invoice Collector</CardTitle>
           <CardDescription>
             Inicie sessão para gerir as suas faturas
           </CardDescription>

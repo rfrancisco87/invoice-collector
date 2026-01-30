@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Mail, CheckCircle, AlertCircle, ArrowRight, Unplug } from 'lucide-react'
 import Link from 'next/link'
 
-export default function GmailConnectPage() {
+function GmailConnectContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const error = searchParams.get('error')
@@ -158,5 +158,19 @@ export default function GmailConnectPage() {
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+export default function GmailConnectPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        </div>
+      }
+    >
+      <GmailConnectContent />
+    </Suspense>
   )
 }

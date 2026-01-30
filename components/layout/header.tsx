@@ -19,9 +19,9 @@ interface HeaderProps {
 
 export function Header({ user, showSync = true, isAdmin = false }: HeaderProps) {
   return (
-    <header className="border-b bg-card">
-      <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between">
+    <header className="border-b bg-background">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="flex h-16 items-center justify-between">
           <Link href="/dashboard" className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
               <FileText className="h-5 w-5 text-primary-foreground" />

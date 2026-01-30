@@ -248,20 +248,25 @@ export async function POST(request: Request) {
             } else if (response.document_type === 'credit_note') {
               classification = 'credit_note'
             } else {
-              classification = 'unclassified'
+              // Skip documents that are not invoices or credit notes (e.g., bank statements)
+              processingLog.push(`⊘ SKIPPED - Document type "${response.document_type}" is not an invoice or credit note`)
+              continue
             }
 
-            processingLog.push(`Webhook processed: ${response.document_type || 'unclassified'}`)
+            processingLog.push(`Webhook processed: ${response.document_type}`)
             processingLog.push(`Invoice #: ${response.invoice_number || 'N/A'}`)
             processingLog.push(`Supplier: ${response.supplier_name || 'N/A'}`)
             processingLog.push(`Total: ${response.invoice_total || 'N/A'} ${response.currency || ''}`)
           } catch (error) {
             webhookError = error instanceof Error ? error.message : 'Unknown webhook error'
             processingLog.push(`⚠ Webhook failed: ${webhookError}`)
-            processingLog.push(`Document will be saved without webhook data`)
+            processingLog.push(`⊘ SKIPPED - Cannot classify document without webhook response`)
+            continue
           }
         } else {
           processingLog.push(`No webhook URL configured, skipping webhook processing`)
+          processingLog.push(`⊘ SKIPPED - Webhook required to classify documents`)
+          continue
         }
 
         // Step 7: Save to database

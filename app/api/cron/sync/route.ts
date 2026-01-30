@@ -244,10 +244,22 @@ async function runCronSync(startTime: number) {
                   classification = 'invoice'
                 } else if (response.document_type === 'credit_note') {
                   classification = 'credit_note'
+                } else {
+                  // Skip documents that are not invoices or credit notes (e.g., bank statements)
+                  console.log(`[Cron Sync] Skipping document type "${response.document_type}" - not an invoice or credit note`)
+                  continue
                 }
               } catch (error) {
                 webhookError = error instanceof Error ? error.message : 'Unknown webhook error'
               }
+            }
+
+            // Skip if no webhook configured and can't classify (optional: you might want to save these)
+            // For now, only save if we have a valid classification from webhook
+            if (!webhookData && userSettings.webhook_url) {
+              // Webhook was configured but failed - skip this document
+              console.log(`[Cron Sync] Skipping document - webhook failed and cannot classify`)
+              continue
             }
 
             // Save document to database
