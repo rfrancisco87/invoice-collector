@@ -133,33 +133,30 @@ export function OnboardingWizard({ open, onClose }: OnboardingWizardProps) {
             )
         },
         {
-            title: 'Experimente com um Exemplo',
-            description: 'Veja como funciona com uma fatura de demonstração',
+            title: 'Tudo pronto para começar!',
+            description: 'Vamos conectar sua conta Google',
             icon: FileText,
             content: () => (
                 <div className="space-y-4">
                     <p className="text-muted-foreground">
-                        Criamos uma fatura de demonstração para você experimentar:
+                        Para finalizar a configuração, vamos redirecionar você para a página de configurações.
                     </p>
                     <div className="bg-muted p-4 rounded-lg space-y-2">
-                        <div className="flex items-center justify-between">
-                            <span className="text-sm font-medium">Demo Supplier Lda</span>
-                            <span className="text-xs bg-warning/10 text-warning px-2 py-1 rounded">DEMO</span>
-                        </div>
-                        <div className="text-sm text-muted-foreground">
-                            Nº DEMO-2026/001
-                        </div>
-                        <div className="text-lg font-semibold">€1,234.56</div>
+                        <h4 className="font-medium text-sm">Próximos passos nas Configurações:</h4>
+                        <ul className="space-y-2 text-sm text-muted-foreground">
+                            <li className="flex items-center gap-2">
+                                <span className="bg-primary/20 text-primary w-5 h-5 flex items-center justify-center rounded-full text-xs font-bold">1</span>
+                                Conectar sua conta Gmail
+                            </li>
+                            <li className="flex items-center gap-2">
+                                <span className="bg-primary/20 text-primary w-5 h-5 flex items-center justify-center rounded-full text-xs font-bold">2</span>
+                                Selecionar a pasta do Google Drive
+                            </li>
+                        </ul>
                     </div>
                     <p className="text-sm text-muted-foreground">
-                        Na página de documentos pendentes, você pode:
+                        Criamos uma fatura de demonstração para você ver o sistema em ação assim que terminar a configuração.
                     </p>
-                    <ul className="space-y-1 text-sm text-muted-foreground">
-                        <li>✓ Aprovar a fatura</li>
-                        <li>✓ Rejeitar se não for válida</li>
-                        <li>✓ Reclassificar como Nota de Crédito</li>
-                        <li>✓ Deletar a fatura de demonstração</li>
-                    </ul>
                 </div>
             )
         }
@@ -204,7 +201,7 @@ export function OnboardingWizard({ open, onClose }: OnboardingWizardProps) {
             })
 
             onClose()
-            router.refresh()
+            router.push('/settings')
         } catch (error) {
             console.error('Error completing onboarding:', error)
         } finally {
@@ -248,7 +245,7 @@ export function OnboardingWizard({ open, onClose }: OnboardingWizardProps) {
                     </div>
 
                     {/* Content */}
-                    <div className="min-h-[200px]">
+                    <div className="h-[320px] overflow-y-auto">
                         {steps[currentStep].content()}
                     </div>
 
@@ -280,7 +277,7 @@ export function OnboardingWizard({ open, onClose }: OnboardingWizardProps) {
                                         'Criando...'
                                     ) : (
                                         <>
-                                            Começar
+                                            Ir para Configurações
                                             <CheckCircle2 className="h-4 w-4 ml-2" />
                                         </>
                                     )

@@ -4,8 +4,9 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Bell, Mail, Clock, Check, Tag, Archive, AlertCircle } from 'lucide-react'
+import { Bell, Mail, Clock, Check, Tag, Archive, AlertCircle, HardDrive } from 'lucide-react'
 import Link from 'next/link'
+import { DriveFolderSelector } from './drive-folder-selector'
 
 interface Settings {
   sync_days_back: number
@@ -17,6 +18,9 @@ interface Settings {
   archive_synced_emails: boolean
   subscription_tier?: 'free' | 'paid'
   sync_frequency_minutes?: number
+  drive_folder_id?: string | null
+  drive_folder_name?: string | null
+  drive_folder_path?: string | null
 }
 
 interface SettingsFormProps {
@@ -34,6 +38,9 @@ export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormPr
     gmail_sync_label: settings?.gmail_sync_label || 'Invoice Collector - Synced',
     archive_synced_emails: settings?.archive_synced_emails ?? false,
     subscription_tier: settings?.subscription_tier || 'free',
+    drive_folder_id: settings?.drive_folder_id || null,
+    drive_folder_name: settings?.drive_folder_name || null,
+    drive_folder_path: settings?.drive_folder_path || null,
   })
   const [isSaving, setIsSaving] = useState(false)
   const [isSendingTest, setIsSendingTest] = useState(false)
@@ -103,8 +110,8 @@ export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormPr
       {message && (
         <div
           className={`rounded-lg p-4 ${message.type === 'success'
-              ? 'bg-success/10 text-success'
-              : 'bg-destructive/10 text-destructive'
+            ? 'bg-success/10 text-success'
+            : 'bg-destructive/10 text-destructive'
             }`}
         >
           <div className="flex items-center gap-2">
@@ -158,6 +165,31 @@ export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormPr
             </Link>
           </div>
         )}
+      </div>
+
+      {/* Google Drive Folder Section */}
+      <div className="rounded-lg border bg-card p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <HardDrive className="h-6 w-6 text-primary" />
+          <h2 className="text-lg font-semibold text-foreground">Google Drive</h2>
+        </div>
+
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Escolha a pasta do Google Drive onde as faturas serão guardadas.
+          </p>
+
+          <DriveFolderSelector
+            currentFolderId={formData.drive_folder_id}
+            currentFolderName={formData.drive_folder_name}
+            onSelect={(id, name, path) => setFormData(prev => ({
+              ...prev,
+              drive_folder_id: id,
+              drive_folder_name: name,
+              drive_folder_path: path
+            }))}
+          />
+        </div>
       </div>
 
       {/* Sync Settings */}

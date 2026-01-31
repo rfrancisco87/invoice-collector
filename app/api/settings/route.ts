@@ -48,6 +48,9 @@ export async function PATCH(request: Request) {
       gmail_sync_label,
       archive_synced_emails,
       subscription_tier,
+      drive_folder_id,
+      drive_folder_name,
+      drive_folder_path,
     } = body
 
     const updates: any = {}
@@ -58,6 +61,11 @@ export async function PATCH(request: Request) {
     if (notification_email !== undefined) updates.notification_email = notification_email
     if (gmail_sync_label !== undefined) updates.gmail_sync_label = gmail_sync_label || null
     if (archive_synced_emails !== undefined) updates.archive_synced_emails = archive_synced_emails
+
+    // Drive settings
+    if (drive_folder_id !== undefined) updates.drive_folder_id = drive_folder_id
+    if (drive_folder_name !== undefined) updates.drive_folder_name = drive_folder_name
+    if (drive_folder_path !== undefined) updates.drive_folder_path = drive_folder_path
     if (subscription_tier !== undefined) {
       updates.subscription_tier = subscription_tier
       // Automatically set sync frequency based on subscription tier
@@ -77,6 +85,7 @@ export async function PATCH(request: Request) {
         error: 'Failed to update settings',
         details: error.message,
         code: error.code,
+        // @ts-ignore - hint exists in some Supabase error types
         hint: error.hint
       }, { status: 500 })
     }
@@ -119,7 +128,7 @@ export async function POST(request: Request) {
         .eq('user_id', user.id)
         .single()
 
-      const emailTo = settings?.notification_email || user.email
+      const emailTo = (settings && 'notification_email' in settings) ? settings.notification_email : user.email
 
       if (!emailTo) {
         return NextResponse.json({ error: 'No email address configured' }, { status: 400 })

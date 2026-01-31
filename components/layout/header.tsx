@@ -3,6 +3,7 @@ import { SyncButton } from '@/components/sync-button'
 import { UserMenu } from '@/components/layout/user-menu'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { FileText } from 'lucide-react'
+import { HelpButton } from './help-button'
 
 interface HeaderProps {
   user: {
@@ -32,6 +33,7 @@ export function Header({ user, showSync = true, isAdmin = false }: HeaderProps) 
           </Link>
           <div className="flex items-center gap-3">
             {showSync && <SyncButton />}
+            <HelpButton />
             <ThemeToggle />
             <UserMenu user={user} isAdmin={isAdmin} />
           </div>
