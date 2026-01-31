@@ -43,7 +43,6 @@ export async function getValidAccessToken(
 
   // If no current token or no expiry, refresh immediately
   if (!currentToken || !tokenExpiry) {
-    console.log('[Token Refresh] No current token or expiry, refreshing...')
     const result = await refreshAccessToken(refreshToken)
     const newExpiry = result.expiryDate
       ? new Date(result.expiryDate).toISOString()
@@ -62,7 +61,6 @@ export async function getValidAccessToken(
   // If token is expired or expires in less than 5 minutes, refresh it
   const bufferTime = 5 * 60 * 1000 // 5 minutes
   if (expiryDate.getTime() - now.getTime() < bufferTime) {
-    console.log('[Token Refresh] Token expired or expiring soon, refreshing...')
     const result = await refreshAccessToken(refreshToken)
     const newExpiry = result.expiryDate
       ? new Date(result.expiryDate).toISOString()

@@ -1,12 +1,50 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+/**
+ * Add security headers to response
+ */
+function addSecurityHeaders(response: NextResponse): NextResponse {
+  // Prevent clickjacking
+  response.headers.set('X-Frame-Options', 'DENY')
+
+  // Prevent MIME type sniffing
+  response.headers.set('X-Content-Type-Options', 'nosniff')
+
+  // Enable XSS protection (legacy browsers)
+  response.headers.set('X-XSS-Protection', '1; mode=block')
+
+  // Control referrer information
+  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
+
+  // Permissions policy (disable unnecessary features)
+  response.headers.set(
+    'Permissions-Policy',
+    'camera=(), microphone=(), geolocation=(), interest-cohort=()'
+  )
+
+  // Content Security Policy
+  response.headers.set(
+    'Content-Security-Policy',
+    "default-src 'self'; " +
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
+    "style-src 'self' 'unsafe-inline'; " +
+    "img-src 'self' data: https:; " +
+    "font-src 'self' data:; " +
+    "connect-src 'self' https://*.supabase.co https://*.googleapis.com; " +
+    "frame-ancestors 'none';"
+  )
+
+  return response
+}
+
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname
 
   // Skip middleware for callbacks to avoid interfering with OAuth flows
   if (pathname === '/auth/callback' || pathname === '/api/gmail/callback') {
-    return NextResponse.next()
+    const response = NextResponse.next()
+    return addSecurityHeaders(response)
   }
 
   let supabaseResponse = NextResponse.next({
@@ -52,12 +90,14 @@ export async function middleware(request: NextRequest) {
   if ((isProtectedRoute || isAdminRoute) && !user) {
     const redirectUrl = new URL('/login', request.url)
     redirectUrl.searchParams.set('redirect', pathname)
-    return NextResponse.redirect(redirectUrl)
+    const redirectResponse = NextResponse.redirect(redirectUrl)
+    return addSecurityHeaders(redirectResponse)
   }
 
   // Redirect authenticated users away from public auth pages
   if (isPublicRoute && user) {
-    return NextResponse.redirect(new URL('/dashboard', request.url))
+    const redirectResponse = NextResponse.redirect(new URL('/dashboard', request.url))
+    return addSecurityHeaders(redirectResponse)
   }
 
   // Check admin access for admin routes
@@ -69,11 +109,12 @@ export async function middleware(request: NextRequest) {
       .single()
 
     if (!profile || profile.role !== 'admin') {
-      return NextResponse.redirect(new URL('/dashboard', request.url))
+      const redirectResponse = NextResponse.redirect(new URL('/dashboard', request.url))
+      return addSecurityHeaders(redirectResponse)
     }
   }
 
-  return supabaseResponse
+  return addSecurityHeaders(supabaseResponse)
 }
 
 export const config = {

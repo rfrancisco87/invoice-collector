@@ -35,6 +35,7 @@ interface Document {
   supplier_name?: string | null
   invoice_total?: number | null
   currency?: string | null
+  is_demo?: boolean
 }
 
 interface DocumentListProps {
@@ -174,33 +175,109 @@ export function DocumentList({ documents }: DocumentListProps) {
   }
 
   return (
-    <div className="divide-y divide-border">
-      {documents.map((doc) => {
-        const isProcessing = processingId === doc.id
-        const isReprocessing = reprocessingId === doc.id
-        const isReclassifying = reclassifyingId === doc.id
+    <div>
+      {/* Column Headers */}
+      <div className="border-b border-border bg-muted/30 px-4 py-3">
+        <div className="flex items-center gap-4">
+          <div className="flex-shrink-0 w-8">
+            <span className="text-xs font-medium text-muted-foreground">Tipo</span>
+          </div>
+          <div className="flex-1 min-w-0 max-w-[200px]">
+            <span className="text-xs font-medium text-muted-foreground">Fornecedor</span>
+          </div>
+          <div className="flex-shrink-0 w-40">
+            <span className="text-xs font-medium text-muted-foreground">Nº Documento</span>
+          </div>
+          <div className="flex-shrink-0 w-28">
+            <span className="text-xs font-medium text-muted-foreground">Data</span>
+          </div>
+          <div className="flex-shrink-0 w-28 text-right">
+            <span className="text-xs font-medium text-muted-foreground">Total</span>
+          </div>
+          <div className="flex-shrink-0">
+            <span className="text-xs font-medium text-muted-foreground">Estado</span>
+          </div>
+          <div className="flex-shrink-0 ml-auto">
+            <span className="text-xs font-medium text-muted-foreground">Ações</span>
+          </div>
+        </div>
+      </div>
 
-        return (
-          <div key={doc.id} className="p-5 hover:bg-muted/50 transition-colors">
-            <div className="flex flex-col lg:flex-row lg:items-start gap-4">
-              {/* Main Content */}
-              <div className="flex-1 min-w-0">
-                {/* Header */}
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="font-semibold text-foreground truncate">
+      {/* Document List */}
+      <div className="divide-y divide-border">
+        {documents.map((doc, index) => {
+          const isProcessing = processingId === doc.id
+          const isReprocessing = reprocessingId === doc.id
+          const isReclassifying = reclassifyingId === doc.id
+          const isEven = index % 2 === 0
+
+          return (
+            <div
+              key={doc.id}
+              className={`p-4 transition-colors hover:bg-muted/70 ${isEven ? 'bg-muted/20' : 'bg-background'
+                }`}
+            >
+              <div className="flex items-center gap-4">
+                {/* Type Indicator Column */}
+                <div className="flex-shrink-0 w-8">
+                  <div
+                    className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${doc.final_classification === 'invoice'
+                      ? 'bg-primary/10 text-primary'
+                      : doc.final_classification === 'credit_note'
+                        ? 'bg-warning/10 text-warning'
+                        : 'bg-muted text-muted-foreground'
+                      }`}
+                  >
+                    {doc.final_classification === 'invoice' ? 'F' : doc.final_classification === 'credit_note' ? 'C' : '?'}
+                  </div>
+                </div>
+
+                {/* Supplier Column */}
+                <div className="flex-1 min-w-0 max-w-[200px]">
+                  <h3 className="font-semibold text-foreground text-sm truncate">
                     {doc.supplier_name || doc.filename}
                   </h3>
-                  <Badge
-                    variant={
-                      doc.final_classification === 'invoice'
-                        ? 'info'
-                        : doc.final_classification === 'credit_note'
-                        ? 'warning'
-                        : 'secondary'
-                    }
-                  >
-                    {getClassificationLabel(doc.final_classification)}
-                  </Badge>
+                  <div className="flex items-center gap-1 mt-0.5 text-xs text-muted-foreground">
+                    <Mail className="h-3 w-3 flex-shrink-0" />
+                    <span className="truncate">{doc.sender}</span>
+                  </div>
+                </div>
+
+                {/* Invoice Number Column */}
+                <div className="flex-shrink-0 w-40">
+                  {doc.invoice_number ? (
+                    <p className="text-sm font-medium text-foreground">{doc.invoice_number}</p>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">—</span>
+                  )}
+                </div>
+
+                {/* Date Column */}
+                <div className="flex-shrink-0 w-28">
+                  <div className="flex items-center gap-1 text-sm">
+                    <Calendar className="h-3 w-3 text-muted-foreground" />
+                    <span className="text-foreground">{new Date(doc.received_date).toLocaleDateString('pt-PT')}</span>
+                  </div>
+                </div>
+
+                {/* Total Column */}
+                <div className="flex-shrink-0 w-28 text-right">
+                  {doc.invoice_total != null ? (
+                    <span className="text-sm font-semibold text-foreground">
+                      {formatCurrency(doc.invoice_total, doc.currency)}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">—</span>
+                  )}
+                </div>
+
+                {/* Status/Badges Column */}
+                <div className="flex-shrink-0 flex items-center gap-2">
+                  {doc.is_demo && (
+                    <Badge className="bg-warning/10 text-warning border-warning/20 text-xs">
+                      DEMO
+                    </Badge>
+                  )}
                   <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
                     {Math.round(doc.confidence_score * 100)}%
                   </span>
@@ -217,139 +294,96 @@ export function DocumentList({ documents }: DocumentListProps) {
                   )}
                 </div>
 
-                {doc.supplier_name && (
-                  <p className="mt-0.5 text-sm text-muted-foreground truncate">
-                    {doc.filename}
-                  </p>
-                )}
-
-                {/* Invoice Details */}
-                <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
-                  {doc.invoice_number && (
-                    <span className="text-sm">
-                      <span className="text-muted-foreground">Nº </span>
-                      <span className="font-medium">{doc.invoice_number}</span>
-                    </span>
-                  )}
-                  {doc.invoice_total != null && (
-                    <span className="text-sm font-semibold text-foreground">
-                      {formatCurrency(doc.invoice_total, doc.currency)}
-                    </span>
-                  )}
-                </div>
-
-                {/* Metadata */}
-                <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
-                  <div className="flex items-center gap-1.5">
-                    <Mail className="h-4 w-4" />
-                    <span className="truncate max-w-[200px]">{doc.sender}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <Calendar className="h-4 w-4" />
-                    <span>{new Date(doc.received_date).toLocaleDateString('pt-PT')}</span>
-                  </div>
-                </div>
-
-                {/* Subject */}
-                {doc.subject && (
-                  <p className="mt-2 text-sm text-muted-foreground line-clamp-1 italic">
-                    {doc.subject}
-                  </p>
-                )}
-              </div>
-
-              {/* Actions */}
-              <div className="flex flex-wrap items-center gap-2 lg:flex-col lg:items-stretch lg:w-40">
-                {isReclassifying ? (
-                  <>
-                    <p className="text-xs font-medium text-muted-foreground w-full">Reclassificar como:</p>
-                    <Button
-                      onClick={() => handleReclassify(doc.id, 'invoice')}
-                      variant="outline"
-                      size="sm"
-                      className="flex-1 lg:w-full"
-                    >
-                      Fatura
-                    </Button>
-                    <Button
-                      onClick={() => handleReclassify(doc.id, 'credit_note')}
-                      variant="outline"
-                      size="sm"
-                      className="flex-1 lg:w-full"
-                    >
-                      Nota de Crédito
-                    </Button>
-                    <Button
-                      onClick={() => setReclassifyingId(null)}
-                      variant="ghost"
-                      size="sm"
-                      className="w-full"
-                    >
-                      Cancelar
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <Button
-                      onClick={() => openInDrive(doc.drive_file_id)}
-                      variant="outline"
-                      size="sm"
-                      className="gap-2"
-                    >
-                      <ExternalLink className="h-4 w-4" />
-                      Ver PDF
-                    </Button>
-
-                    <Button
-                      onClick={() => handleAction(doc.id, 'approve')}
-                      disabled={isProcessing || isReprocessing}
-                      variant="default"
-                      size="sm"
-                      className="gap-1"
-                    >
-                      <Check className="h-4 w-4" />
-                      {isProcessing ? '...' : 'Aprovar'}
-                    </Button>
-
-                    <Button
-                      onClick={() => handleAction(doc.id, 'reject')}
-                      disabled={isProcessing || isReprocessing}
-                      variant="destructive"
-                      size="sm"
-                      className="gap-1"
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-
-                    <Button
-                      onClick={() => setReclassifyingId(doc.id)}
-                      disabled={isProcessing || isReprocessing}
-                      variant="ghost"
-                      size="sm"
-                      className="text-muted-foreground"
-                    >
-                      Reclassificar
-                    </Button>
-
-                    {doc.webhook_error && (
+                {/* Actions */}
+                <div className="flex-shrink-0 flex items-center gap-2">
+                  {isReclassifying ? (
+                    <div className="flex items-center gap-2">
                       <Button
-                        onClick={() => handleReprocess(doc.id)}
-                        disabled={isProcessing || isReprocessing}
+                        onClick={() => handleReclassify(doc.id, 'invoice')}
                         variant="outline"
                         size="sm"
-                        className="gap-2"
                       >
-                        <RefreshCw className={`h-4 w-4 ${isReprocessing ? 'animate-spin' : ''}`} />
-                        {isReprocessing ? '...' : 'Reprocessar'}
+                        Fatura
                       </Button>
-                    )}
-                  </>
-                )}
+                      <Button
+                        onClick={() => handleReclassify(doc.id, 'credit_note')}
+                        variant="outline"
+                        size="sm"
+                      >
+                        Nota de Crédito
+                      </Button>
+                      <Button
+                        onClick={() => setReclassifyingId(null)}
+                        variant="ghost"
+                        size="sm"
+                      >
+                        Cancelar
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
+                      <Button
+                        onClick={() => openInDrive(doc.drive_file_id)}
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        title="Ver PDF no Drive"
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                      </Button>
+
+                      <Button
+                        onClick={() => handleAction(doc.id, 'approve')}
+                        disabled={isProcessing || isReprocessing}
+                        variant="default"
+                        size="sm"
+                        className="gap-1"
+                      >
+                        <Check className="h-4 w-4" />
+                        {isProcessing ? '...' : 'Aprovar'}
+                      </Button>
+
+                      <Button
+                        onClick={() => handleAction(doc.id, 'reject')}
+                        disabled={isProcessing || isReprocessing}
+                        variant="destructive"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        title="Rejeitar"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+
+                      <Button
+                        onClick={() => setReclassifyingId(doc.id)}
+                        disabled={isProcessing || isReprocessing}
+                        variant="ghost"
+                        size="sm"
+                        className="text-xs text-muted-foreground"
+                      >
+                        Reclassificar
+                      </Button>
+
+                      {doc.webhook_error && (
+                        <Button
+                          onClick={() => handleReprocess(doc.id)}
+                          disabled={isProcessing || isReprocessing}
+                          variant="outline"
+                          size="sm"
+                          className="gap-1"
+                        >
+                          <RefreshCw className={`h-4 w-4 ${isReprocessing ? 'animate-spin' : ''}`} />
+                          {isReprocessing ? '...' : 'Reprocessar'}
+                        </Button>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        )
-      })}
+          )
+        })}
+      </div>
     </div>
   )
 }

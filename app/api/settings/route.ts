@@ -64,9 +64,6 @@ export async function PATCH(request: Request) {
       updates.sync_frequency_minutes = subscription_tier === 'paid' ? 15 : 720
     }
 
-    console.log('[Settings API] Updating settings for user:', user.id)
-    console.log('[Settings API] Updates:', JSON.stringify(updates, null, 2))
-
     const { data: settings, error } = await supabase
       .from('user_settings')
       .update(updates)

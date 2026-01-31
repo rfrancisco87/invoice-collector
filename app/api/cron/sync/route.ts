@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { timingSafeEqual } from 'crypto'
 import {
   scanGmailForInvoices,
   calculateFileHash,
@@ -414,6 +415,42 @@ async function runCronSync(startTime: number) {
 }
 
 /**
+ * Validate cron secret using constant-time comparison to prevent timing attacks
+ */
+function validateCronSecret(authHeader: string | null): boolean {
+  const cronSecret = process.env.CRON_SECRET
+
+  // Reject if CRON_SECRET is not configured or empty
+  if (!cronSecret || cronSecret.trim() === '') {
+    console.error('CRON_SECRET is not configured')
+    return false
+  }
+
+  // Reject if no auth header provided
+  if (!authHeader) {
+    return false
+  }
+
+  // Extract token from "Bearer <token>" format
+  const expectedHeader = `Bearer ${cronSecret}`
+
+  // Use constant-time comparison to prevent timing attacks
+  // Ensure both strings are same length for timingSafeEqual
+  if (authHeader.length !== expectedHeader.length) {
+    return false
+  }
+
+  try {
+    return timingSafeEqual(
+      Buffer.from(authHeader, 'utf8'),
+      Buffer.from(expectedHeader, 'utf8')
+    )
+  } catch {
+    return false
+  }
+}
+
+/**
  * GET endpoint - Called by Vercel Cron
  * Vercel cron jobs send GET requests, so this is the main entry point for automated syncs.
  */
@@ -421,9 +458,9 @@ export async function GET(request: Request) {
   const startTime = Date.now()
 
   try {
-    // Verify cron secret - Vercel sends this automatically for cron jobs
+    // Verify cron secret with secure comparison
     const authHeader = request.headers.get('authorization')
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    if (!validateCronSecret(authHeader)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -450,9 +487,9 @@ export async function POST(request: Request) {
   const startTime = Date.now()
 
   try {
-    // Verify cron secret
+    // Verify cron secret with secure comparison
     const authHeader = request.headers.get('authorization')
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    if (!validateCronSecret(authHeader)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
