@@ -232,13 +232,15 @@ export async function POST(request: Request) {
         let webhookError = null
         let classification: 'invoice' | 'credit_note' | 'unclassified' = 'unclassified'
 
-        if (settings.webhook_url && settings.webhook_url.trim()) {
+        const effectiveWebhookUrl = settings.webhook_url?.trim() || process.env.WEBHOOK_URL?.trim()
+
+        if (effectiveWebhookUrl) {
           processingLog.push(`Sending to webhook for processing...`)
           try {
             const response = await sendPdfToWebhook(
               attachment.data,
               attachment.filename,
-              settings.webhook_url
+              effectiveWebhookUrl
             )
             webhookData = response
 
@@ -446,13 +448,13 @@ export async function POST(request: Request) {
               let webhookError = null
               let classification: 'invoice' | 'credit_note' | 'unclassified' = 'unclassified'
 
-              if (settings.webhook_url && settings.webhook_url.trim()) {
+              if (effectiveWebhookUrl) {
                 processingLog.push(`Sending to webhook...`)
                 try {
                   const response = await sendPdfToWebhook(
                     doc.data,
                     doc.filename,
-                    settings.webhook_url
+                    effectiveWebhookUrl
                   )
                   webhookData = response
 

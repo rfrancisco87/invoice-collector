@@ -63,6 +63,7 @@ export async function PATCH(request: Request) {
       inbox_folder_id,
       inbox_folder_name,
       inbox_folder_enabled,
+      webhook_url,
     } = body
 
     const updates: any = {}
@@ -73,6 +74,7 @@ export async function PATCH(request: Request) {
     if (notification_email !== undefined) updates.notification_email = notification_email
     if (gmail_sync_label !== undefined) updates.gmail_sync_label = gmail_sync_label || null
     if (archive_synced_emails !== undefined) updates.archive_synced_emails = archive_synced_emails
+    if (webhook_url !== undefined) updates.webhook_url = webhook_url || null
 
     // Drive settings
     if (drive_folder_id !== undefined) updates.drive_folder_id = drive_folder_id

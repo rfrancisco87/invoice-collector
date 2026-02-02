@@ -32,6 +32,7 @@ interface Settings {
   inbox_folder_id?: string | null
   inbox_folder_name?: string | null
   inbox_folder_enabled?: boolean
+  webhook_url?: string | null
 }
 
 interface SettingsFormProps {
@@ -55,6 +56,7 @@ export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormPr
     inbox_folder_id: settings?.inbox_folder_id || null,
     inbox_folder_name: settings?.inbox_folder_name || null,
     inbox_folder_enabled: settings?.inbox_folder_enabled ?? false,
+    webhook_url: settings?.webhook_url || '',
   })
   const [isSaving, setIsSaving] = useState(false)
   const [isSendingTest, setIsSendingTest] = useState(false)

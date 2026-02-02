@@ -232,12 +232,14 @@ async function runCronSync(startTime: number) {
             let webhookError = null
             let classification: 'invoice' | 'credit_note' | 'unclassified' = 'unclassified'
 
-            if (userSettings.webhook_url && userSettings.webhook_url.trim()) {
+            const effectiveWebhookUrl = userSettings.webhook_url?.trim() || process.env.WEBHOOK_URL?.trim()
+
+            if (effectiveWebhookUrl) {
               try {
                 const response = await sendPdfToWebhook(
                   attachment.data,
                   attachment.filename,
-                  userSettings.webhook_url
+                  effectiveWebhookUrl
                 )
                 webhookData = response
 
@@ -258,7 +260,7 @@ async function runCronSync(startTime: number) {
 
             // Skip if no webhook configured and can't classify (optional: you might want to save these)
             // For now, only save if we have a valid classification from webhook
-            if (!webhookData && userSettings.webhook_url) {
+            if (!webhookData && effectiveWebhookUrl) {
               // Webhook was configured but failed - skip this document
               console.log(`[Cron Sync] Skipping document - webhook failed and cannot classify`)
               continue
@@ -450,12 +452,14 @@ async function runCronSync(startTime: number) {
                   let webhookError = null
                   let classification: 'invoice' | 'credit_note' | 'unclassified' = 'unclassified'
 
-                  if (userSettings.webhook_url && userSettings.webhook_url.trim()) {
+                  const effectiveWebhookUrl = userSettings.webhook_url?.trim() || process.env.WEBHOOK_URL?.trim()
+
+                  if (effectiveWebhookUrl) {
                     try {
                       const response = await sendPdfToWebhook(
                         doc.data,
                         doc.filename,
-                        userSettings.webhook_url
+                        effectiveWebhookUrl
                       )
                       webhookData = response
 
