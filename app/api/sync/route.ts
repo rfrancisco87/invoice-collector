@@ -4,6 +4,7 @@ import { scanGmailForInvoices, calculateFileHash, getGmailClient, getOrCreateLab
 import { sendPdfToWebhook } from '@/lib/webhook'
 import { getDriveClient } from '@/lib/google-drive'
 import { getValidAccessToken } from '@/lib/token-refresh'
+import { scanInboxFolder } from '@/lib/drive-inbox'
 import { Readable } from 'stream'
 
 export async function POST(request: Request) {
@@ -348,6 +349,198 @@ export async function POST(request: Request) {
 
       } catch (error) {
         processingLog.push(`✗ FAILED - ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+
+    // --- INBOX FOLDER SYNC ---
+    if (settings.inbox_folder_enabled && settings.inbox_folder_id) {
+      processingLog.push(`\n=== STARTING INBOX FOLDER SYNC ===`)
+      processingLog.push(`Scanning folder: ${settings.inbox_folder_name || settings.inbox_folder_id}`)
+
+      try {
+        const lastSyncDate = settings.last_inbox_sync_at ? new Date(settings.last_inbox_sync_at) : undefined
+        if (lastSyncDate) {
+          processingLog.push(`Looking for files modified after: ${lastSyncDate.toLocaleString()}`)
+        }
+
+        const { documents: inboxDocs, debug: inboxDebug } = await scanInboxFolder(
+          providerToken,
+          settings.inbox_folder_id,
+          lastSyncDate
+        )
+
+        processingLog.push(`Found ${inboxDocs.length} new files in inbox folder`)
+
+        let inboxDocsProcessed = 0
+
+        if (inboxDocs.length > 0) {
+          // Get Drive client for file operations
+          const drive = await getDriveClient(providerToken)
+
+          // Find or create Pending Approval folder (reusing logic from Gmail sync would be better, but doing it inline for now)
+          // We already have pendingFolderId from Gmail sync if it ran, but we can't guarantee it ran successfully or found pending folder
+          // So let's ensure we have the pending folder again
+
+          // Helper to get pending folder ID
+          const getPendingFolderId = async () => {
+            const foldersResponse = await drive.files.list({
+              q: `name='Pending Approval' and '${settings.drive_folder_id}' in parents and trashed=false`,
+              fields: 'files(id, name)',
+            })
+
+            if (foldersResponse.data.files?.[0]?.id) {
+              return foldersResponse.data.files[0].id
+            }
+
+            // Create if not exists
+            const folderResponse = await drive.files.create({
+              requestBody: {
+                name: 'Pending Approval',
+                mimeType: 'application/vnd.google-apps.folder',
+                parents: [settings.drive_folder_id!],
+              },
+              fields: 'id',
+            })
+            return folderResponse.data.id!
+          }
+
+          const pendingFolderId = await getPendingFolderId()
+
+          // Process inbox documents
+          for (let i = 0; i < inboxDocs.length; i++) {
+            const doc = inboxDocs[i]
+            processingLog.push(`\n--- Processing inbox file ${i + 1}/${inboxDocs.length} ---`)
+            processingLog.push(`Filename: ${doc.filename}`)
+
+            try {
+              // Check duplicates
+              const { data: existingDoc } = await supabase
+                .from('documents')
+                .select('id, filename')
+                .eq('user_id', user.id)
+                .eq('file_hash', doc.fileHash)
+                .single()
+
+              if (existingDoc) {
+                processingLog.push(`⊘ DUPLICATE - File already exists: ${existingDoc.filename}`)
+                duplicatesSkipped++
+                continue
+              }
+
+              // Copy file to Pending Approval
+              processingLog.push(`Copying to Pending Approval folder...`)
+              const copiedFile = await drive.files.copy({
+                fileId: doc.driveFileId,
+                requestBody: {
+                  name: doc.filename,
+                  parents: [pendingFolderId]
+                },
+                fields: 'id, webViewLink'
+              })
+
+              const driveFileId = copiedFile.data.id!
+              processingLog.push(`Copied file created: ${driveFileId}`)
+
+              // Process with webhook
+              let webhookData = null
+              let webhookError = null
+              let classification: 'invoice' | 'credit_note' | 'unclassified' = 'unclassified'
+
+              if (settings.webhook_url && settings.webhook_url.trim()) {
+                processingLog.push(`Sending to webhook...`)
+                try {
+                  const response = await sendPdfToWebhook(
+                    doc.data,
+                    doc.filename,
+                    settings.webhook_url
+                  )
+                  webhookData = response
+
+                  if (response.document_type === 'supplier_invoice') {
+                    classification = 'invoice'
+                  } else if (response.document_type === 'credit_note') {
+                    classification = 'credit_note'
+                  } else {
+                    processingLog.push(`⊘ SKIPPED - Document type "${response.document_type}" is not an invoice or credit note`)
+                    // Note: We might want to delete the copied file if skipped, but for safety lets keep it or just don't insert to DB
+                    // Deleting copy:
+                    await drive.files.delete({ fileId: driveFileId })
+                    continue
+                  }
+
+                  processingLog.push(`Webhook processed: ${response.document_type}`)
+                } catch (error) {
+                  webhookError = error instanceof Error ? error.message : 'Unknown webhook error'
+                  processingLog.push(`⚠ Webhook failed: ${webhookError}`)
+                  // Clean up copy
+                  await drive.files.delete({ fileId: driveFileId })
+                  continue
+                }
+              } else {
+                processingLog.push(`No webhook URL, skipping`)
+                // Clean up copy
+                await drive.files.delete({ fileId: driveFileId })
+                continue
+              }
+
+              // Save to database
+              const { error: insertError } = await supabase.from('documents').insert({
+                user_id: user.id,
+                gmail_account_id: gmailAccount.id, // Using same account as it's the provider
+                email_message_id: `drive_inbox_${doc.driveFileId}`, // unique fake ID
+                file_hash: doc.fileHash,
+                subject: `File from Inbox: ${doc.filename}`,
+                sender: 'Drive Upload',
+                sender_domain: 'drive.google.com',
+                received_date: doc.createdDate.toISOString(),
+                filename: doc.filename,
+                original_classification: classification,
+                final_classification: classification,
+                confidence_score: webhookData ? 1.0 : 0.5,
+                status: 'pending',
+                drive_file_id: driveFileId,
+                drive_folder_path: 'Pending Approval',
+                source: 'inbox_folder',
+                inbox_file_id: doc.driveFileId,
+                // Webhook data
+                invoice_number: webhookData?.invoice_number || null,
+                issue_date: webhookData?.issue_date || null,
+                supplier_name: webhookData?.supplier_name || null,
+                supplier_vat_number: webhookData?.supplier_vat_number || null,
+                total_without_vat: webhookData?.total_without_vat ? parseFloat(webhookData.total_without_vat) : null,
+                total_vat: webhookData?.total_vat ? parseFloat(webhookData.total_vat) : null,
+                invoice_total: webhookData?.invoice_total ? parseFloat(webhookData.invoice_total) : null,
+                currency: webhookData?.currency || null,
+                numb_pages: webhookData?.numb_pages || null,
+                document_type: webhookData?.document_type || null,
+                webhook_processed_at: webhookData ? new Date().toISOString() : null,
+                webhook_error: webhookError,
+              })
+
+              if (insertError) {
+                processingLog.push(`DATABASE ERROR: ${insertError.message}`)
+                throw new Error(insertError.message)
+              }
+
+              documentsFound++
+              inboxDocsProcessed++
+              processingLog.push(`✓ SUCCESS - Saved to database`)
+
+            } catch (error) {
+              processingLog.push(`✗ FAILED inbox file - ${error instanceof Error ? error.message : String(error)}`)
+            }
+          }
+
+          // Update last sync time
+          if (inboxDocsProcessed > 0) {
+            await supabase
+              .from('user_settings')
+              .update({ last_inbox_sync_at: new Date().toISOString() })
+              .eq('user_id', user.id)
+          }
+        }
+      } catch (error) {
+        processingLog.push(`ERROR in inbox sync: ${error instanceof Error ? error.message : String(error)}`)
       }
     }
 

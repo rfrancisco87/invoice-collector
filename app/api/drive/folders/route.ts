@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { listDriveFolders } from '@/lib/google-drive'
+import { listDriveFolders, getFolderHierarchy } from '@/lib/google-drive'
 import { getValidAccessToken } from '@/lib/token-refresh'
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -44,7 +44,18 @@ export async function GET() {
         .eq('id', gmailAccount.id)
     }
 
-    const folders = await listDriveFolders(tokenResult.accessToken)
+    const { searchParams } = new URL(request.url)
+    const resolvePath = searchParams.get('resolvePath')
+    const folderId = searchParams.get('folderId')
+
+    if (resolvePath && folderId) {
+      const hierarchy = await getFolderHierarchy(tokenResult.accessToken, folderId)
+      return NextResponse.json({ hierarchy })
+    }
+
+    const parentId = searchParams.get('parentId') || 'root'
+
+    const folders = await listDriveFolders(tokenResult.accessToken, parentId)
 
     return NextResponse.json({ folders })
   } catch (error) {

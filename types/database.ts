@@ -11,6 +11,7 @@ export type DocumentStatus = 'pending' | 'approved' | 'rejected'
 export type SyncStatus = 'running' | 'completed' | 'failed'
 export type FeedbackAction = 'approved' | 'rejected' | 'reclassified'
 export type UserRole = 'user' | 'admin'
+export type DocumentSource = 'gmail' | 'inbox_folder'
 
 // Profile type for user management
 export interface Profile {
@@ -127,6 +128,12 @@ export interface Database {
           drive_folder_id: string | null
           drive_folder_name: string | null
           drive_folder_path: string | null
+          inbox_folder_id: string | null
+          inbox_folder_name: string | null
+          inbox_folder_enabled: boolean
+          pending_folder_id: string | null
+          approved_folder_id: string | null
+          last_inbox_sync_at: string | null
           sync_days_back: number
           auto_sync_enabled: boolean
           email_notifications_enabled: boolean
@@ -146,6 +153,12 @@ export interface Database {
           drive_folder_id?: string | null
           drive_folder_name?: string | null
           drive_folder_path?: string | null
+          inbox_folder_id?: string | null
+          inbox_folder_name?: string | null
+          inbox_folder_enabled?: boolean
+          pending_folder_id?: string | null
+          approved_folder_id?: string | null
+          last_inbox_sync_at?: string | null
           sync_days_back?: number
           auto_sync_enabled?: boolean
           email_notifications_enabled?: boolean
@@ -165,6 +178,12 @@ export interface Database {
           drive_folder_id?: string | null
           drive_folder_name?: string | null
           drive_folder_path?: string | null
+          inbox_folder_id?: string | null
+          inbox_folder_name?: string | null
+          inbox_folder_enabled?: boolean
+          pending_folder_id?: string | null
+          approved_folder_id?: string | null
+          last_inbox_sync_at?: string | null
           sync_days_back?: number
           auto_sync_enabled?: boolean
           email_notifications_enabled?: boolean
@@ -198,6 +217,8 @@ export interface Database {
           status: DocumentStatus
           drive_file_id: string | null
           drive_folder_path: string | null
+          source: DocumentSource
+          inbox_file_id: string | null
           processed_at: string
           approved_at: string | null
           rejected_at: string | null
@@ -232,6 +253,8 @@ export interface Database {
           status?: DocumentStatus
           drive_file_id?: string | null
           drive_folder_path?: string | null
+          source?: DocumentSource
+          inbox_file_id?: string | null
           processed_at?: string
           approved_at?: string | null
           rejected_at?: string | null
@@ -266,6 +289,8 @@ export interface Database {
           status?: DocumentStatus
           drive_file_id?: string | null
           drive_folder_path?: string | null
+          source?: DocumentSource
+          inbox_file_id?: string | null
           processed_at?: string
           approved_at?: string | null
           rejected_at?: string | null

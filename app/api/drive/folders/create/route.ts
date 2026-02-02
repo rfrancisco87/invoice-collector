@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createDriveFolder, createFolderStructure } from '@/lib/google-drive'
+import { getValidAccessToken } from '@/lib/token-refresh'
 
 export async function POST(request: Request) {
   try {
@@ -12,7 +13,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { name } = body
+    const { name, parentId } = body
 
     if (!name || typeof name !== 'string') {
       return NextResponse.json(
@@ -24,7 +25,7 @@ export async function POST(request: Request) {
     // Get Gmail account with access token
     const { data: gmailAccount, error } = await supabase
       .from('gmail_accounts')
-      .select('access_token')
+      .select('*')
       .eq('user_id', user.id)
       .single()
 
@@ -35,11 +36,29 @@ export async function POST(request: Request) {
       )
     }
 
+    // Get valid access token (will refresh if needed)
+    const tokenResult = await getValidAccessToken(
+      gmailAccount.access_token,
+      gmailAccount.refresh_token,
+      gmailAccount.token_expiry
+    )
+
+    // Update database if token was refreshed
+    if (tokenResult.needsUpdate && tokenResult.newExpiry) {
+      await supabase
+        .from('gmail_accounts')
+        .update({
+          access_token: tokenResult.accessToken,
+          token_expiry: tokenResult.newExpiry,
+        })
+        .eq('id', gmailAccount.id)
+    }
+
     // Create the main folder
-    const folder = await createDriveFolder(gmailAccount.access_token, name)
+    const folder = await createDriveFolder(tokenResult.accessToken, name, parentId)
 
     // Create subfolder structure (Pending Approval, Approved)
-    await createFolderStructure(gmailAccount.access_token, folder.id)
+    await createFolderStructure(tokenResult.accessToken, folder.id)
 
     return NextResponse.json({ folder })
   } catch (error) {

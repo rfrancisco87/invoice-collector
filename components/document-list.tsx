@@ -3,6 +3,12 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { useRouter } from 'next/navigation'
 import {
   ExternalLink,
@@ -13,6 +19,8 @@ import {
   Check,
   X,
   RefreshCw,
+  Tag,
+  HardDrive,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -36,6 +44,7 @@ interface Document {
   invoice_total?: number | null
   currency?: string | null
   is_demo?: boolean
+  source?: 'gmail' | 'inbox_folder'
 }
 
 interface DocumentListProps {
@@ -197,7 +206,7 @@ export function DocumentList({ documents }: DocumentListProps) {
           <div className="flex-shrink-0">
             <span className="text-xs font-medium text-muted-foreground">Estado</span>
           </div>
-          <div className="flex-shrink-0 ml-auto">
+          <div className="flex-shrink-0 w-36 text-right ml-auto">
             <span className="text-xs font-medium text-muted-foreground">Ações</span>
           </div>
         </div>
@@ -238,8 +247,12 @@ export function DocumentList({ documents }: DocumentListProps) {
                     {doc.supplier_name || doc.filename}
                   </h3>
                   <div className="flex items-center gap-1 mt-0.5 text-xs text-muted-foreground">
-                    <Mail className="h-3 w-3 flex-shrink-0" />
-                    <span className="truncate">{doc.sender}</span>
+                    {doc.source === 'inbox_folder' ? (
+                      <HardDrive className="h-3 w-3 flex-shrink-0" />
+                    ) : (
+                      <Mail className="h-3 w-3 flex-shrink-0" />
+                    )}
+                    <span className="truncate">{doc.sender || (doc.source === 'inbox_folder' ? 'Google Drive' : 'Desconhecido')}</span>
                   </div>
                 </div>
 
@@ -295,89 +308,130 @@ export function DocumentList({ documents }: DocumentListProps) {
                 </div>
 
                 {/* Actions */}
-                <div className="flex-shrink-0 flex items-center gap-2">
-                  {isReclassifying ? (
-                    <div className="flex items-center gap-2">
-                      <Button
-                        onClick={() => handleReclassify(doc.id, 'invoice')}
-                        variant="outline"
-                        size="sm"
-                      >
-                        Fatura
-                      </Button>
-                      <Button
-                        onClick={() => handleReclassify(doc.id, 'credit_note')}
-                        variant="outline"
-                        size="sm"
-                      >
-                        Nota de Crédito
-                      </Button>
-                      <Button
-                        onClick={() => setReclassifyingId(null)}
-                        variant="ghost"
-                        size="sm"
-                      >
-                        Cancelar
-                      </Button>
-                    </div>
-                  ) : (
-                    <>
-                      <Button
-                        onClick={() => openInDrive(doc.drive_file_id)}
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 w-8 p-0"
-                        title="Ver PDF no Drive"
-                      >
-                        <ExternalLink className="h-4 w-4" />
-                      </Button>
+                <div className="flex-shrink-0 w-36 flex items-center justify-end gap-1 ml-auto">
+                  <TooltipProvider delayDuration={300}>
+                    {isReclassifying ? (
+                      <div className="flex items-center gap-1">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              onClick={() => handleReclassify(doc.id, 'invoice')}
+                              variant="outline"
+                              size="sm"
+                              className="h-8 px-2 text-xs"
+                            >
+                              Fatura
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Classificar como Fatura</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              onClick={() => handleReclassify(doc.id, 'credit_note')}
+                              variant="outline"
+                              size="sm"
+                              className="h-8 px-2 text-xs"
+                            >
+                              NC
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Classificar como Nota de Crédito</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              onClick={() => setReclassifyingId(null)}
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0"
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Cancelar</TooltipContent>
+                        </Tooltip>
+                      </div>
+                    ) : (
+                      <>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              onClick={() => openInDrive(doc.drive_file_id)}
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0"
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Ver PDF no Drive</TooltipContent>
+                        </Tooltip>
 
-                      <Button
-                        onClick={() => handleAction(doc.id, 'approve')}
-                        disabled={isProcessing || isReprocessing}
-                        variant="default"
-                        size="sm"
-                        className="gap-1"
-                      >
-                        <Check className="h-4 w-4" />
-                        {isProcessing ? '...' : 'Aprovar'}
-                      </Button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              onClick={() => handleAction(doc.id, 'approve')}
+                              disabled={isProcessing || isReprocessing}
+                              variant="default"
+                              size="sm"
+                              className="h-8 w-8 p-0"
+                            >
+                              <Check className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Aprovar documento</TooltipContent>
+                        </Tooltip>
 
-                      <Button
-                        onClick={() => handleAction(doc.id, 'reject')}
-                        disabled={isProcessing || isReprocessing}
-                        variant="destructive"
-                        size="sm"
-                        className="h-8 w-8 p-0"
-                        title="Rejeitar"
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              onClick={() => handleAction(doc.id, 'reject')}
+                              disabled={isProcessing || isReprocessing}
+                              variant="destructive"
+                              size="sm"
+                              className="h-8 w-8 p-0"
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Rejeitar documento</TooltipContent>
+                        </Tooltip>
 
-                      <Button
-                        onClick={() => setReclassifyingId(doc.id)}
-                        disabled={isProcessing || isReprocessing}
-                        variant="ghost"
-                        size="sm"
-                        className="text-xs text-muted-foreground"
-                      >
-                        Reclassificar
-                      </Button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              onClick={() => setReclassifyingId(doc.id)}
+                              disabled={isProcessing || isReprocessing}
+                              variant="outline"
+                              size="sm"
+                              className="h-8 w-8 p-0"
+                            >
+                              <Tag className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Reclassificar</TooltipContent>
+                        </Tooltip>
 
-                      {doc.webhook_error && (
-                        <Button
-                          onClick={() => handleReprocess(doc.id)}
-                          disabled={isProcessing || isReprocessing}
-                          variant="outline"
-                          size="sm"
-                          className="gap-1"
-                        >
-                          <RefreshCw className={`h-4 w-4 ${isReprocessing ? 'animate-spin' : ''}`} />
-                          {isReprocessing ? '...' : 'Reprocessar'}
-                        </Button>
-                      )}
-                    </>
-                  )}
+                        {doc.webhook_error && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                onClick={() => handleReprocess(doc.id)}
+                                disabled={isProcessing || isReprocessing}
+                                variant="outline"
+                                size="sm"
+                                className="h-8 w-8 p-0"
+                              >
+                                <RefreshCw className={`h-4 w-4 ${isReprocessing ? 'animate-spin' : ''}`} />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Reprocessar webhook</TooltipContent>
+                          </Tooltip>
+                        )}
+                      </>
+                    )}
+                  </TooltipProvider>
                 </div>
               </div>
             </div>

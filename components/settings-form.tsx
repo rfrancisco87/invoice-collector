@@ -4,9 +4,17 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Bell, Mail, Clock, Check, Tag, Archive, AlertCircle, HardDrive } from 'lucide-react'
+import { Bell, Mail, Clock, Check, Tag, Archive, AlertCircle, HardDrive, FolderInput } from 'lucide-react'
 import Link from 'next/link'
 import { DriveFolderSelector } from './drive-folder-selector'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 
 interface Settings {
   sync_days_back: number
@@ -21,6 +29,9 @@ interface Settings {
   drive_folder_id?: string | null
   drive_folder_name?: string | null
   drive_folder_path?: string | null
+  inbox_folder_id?: string | null
+  inbox_folder_name?: string | null
+  inbox_folder_enabled?: boolean
 }
 
 interface SettingsFormProps {
@@ -41,12 +52,32 @@ export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormPr
     drive_folder_id: settings?.drive_folder_id || null,
     drive_folder_name: settings?.drive_folder_name || null,
     drive_folder_path: settings?.drive_folder_path || null,
+    inbox_folder_id: settings?.inbox_folder_id || null,
+    inbox_folder_name: settings?.inbox_folder_name || null,
+    inbox_folder_enabled: settings?.inbox_folder_enabled ?? false,
   })
   const [isSaving, setIsSaving] = useState(false)
   const [isSendingTest, setIsSendingTest] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+
   const handleSave = async () => {
+    // Check if disabling inbox sync
+    if (
+      settings?.inbox_folder_enabled &&
+      !formData.inbox_folder_enabled &&
+      settings?.inbox_folder_id
+    ) {
+      setShowDeleteConfirm(true)
+      return
+    }
+
+    await performSave()
+  }
+
+  const performSave = async () => {
+
     try {
       setIsSaving(true)
       setMessage(null)
@@ -58,8 +89,16 @@ export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormPr
       })
 
       if (!response.ok) {
-        const errorData = await response.json()
-        console.error('Settings save error:', errorData)
+        const errorText = await response.text()
+        console.error('Settings save error raw:', errorText)
+        let errorData = {}
+        try {
+          errorData = JSON.parse(errorText)
+        } catch (e) {
+          errorData = { details: errorText || 'Unknown server error' }
+        }
+        console.error('Settings save error data:', errorData)
+        // @ts-ignore
         throw new Error(errorData.details || errorData.error || 'Falha ao guardar definições')
       }
 
@@ -189,6 +228,49 @@ export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormPr
               drive_folder_path: path
             }))}
           />
+        </div>
+      </div>
+
+      {/* Inbox Folder Section */}
+      <div className="rounded-lg border bg-card p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <FolderInput className="h-6 w-6 text-primary" />
+          <h2 className="text-lg font-semibold text-foreground">
+            Pasta de Entrada (Inbox)
+          </h2>
+        </div>
+
+        <div className="space-y-4">
+          <div className="flex items-center space-x-2">
+            <input
+              id="inbox_folder_enabled"
+              type="checkbox"
+              className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+              checked={formData.inbox_folder_enabled}
+              onChange={(e) => setFormData(prev => ({
+                ...prev,
+                inbox_folder_enabled: e.target.checked
+              }))}
+            />
+            <Label htmlFor="inbox_folder_enabled" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+              Ativar sincronização da pasta de entrada
+            </Label>
+          </div>
+          <p className="text-sm text-muted-foreground ml-6">
+            Sincronizar PDFs adicionados manualmente a uma pasta do Drive
+          </p>
+
+          {formData.inbox_folder_enabled && (
+            <div className="ml-6 p-3 bg-muted rounded-md text-sm text-muted-foreground border border-border">
+              <p>
+                A pasta <strong>Inbox</strong> será criada e mantida automaticamente dentro da sua pasta principal do Google Drive:
+              </p>
+              <div className="mt-2 flex items-center gap-2 font-medium text-foreground">
+                <FolderInput className="h-4 w-4" />
+                <span>{formData.drive_folder_name || 'Pasta Principal'} / Inbox</span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -375,6 +457,44 @@ export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormPr
           {isSaving ? 'A guardar...' : 'Guardar Definições'}
         </Button>
       </div>
-    </div>
+
+      <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Desativar Sincronização da Inbox?</DialogTitle>
+            <DialogDescription className="pt-4 space-y-2">
+              <p>
+                Tem a certeza que deseja desativar a sincronização da pasta de entrada?
+              </p>
+              <div className="p-3 bg-destructive/10 text-destructive rounded-md text-sm border border-destructive/20">
+                <p className="font-semibold flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4" />
+                  ATENÇÃO
+                </p>
+                <p className="mt-1">
+                  A pasta "Inbox" será <strong>ELIMINADA PERMANENTEMENTE</strong> do seu Google Drive.
+                  Os ficheiros que estiverem dentro dela também poderão ser perdidos.
+                </p>
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteConfirm(false)}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                setShowDeleteConfirm(false)
+                performSave()
+              }}
+            >
+              Sim, desativar e eliminar pasta
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div >
   )
 }
+

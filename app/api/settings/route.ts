@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { sendTestEmail } from '@/lib/email'
+import { createFolderStructure, deleteDriveFolder } from '@/lib/google-drive'
+import { getValidAccessToken } from '@/lib/token-refresh'
 
 export async function GET() {
   try {
@@ -39,6 +41,13 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    // Fetch current settings for reference (needed for effective values)
+    const { data: currentSettings } = await supabase
+      .from('user_settings')
+      .select('*')
+      .eq('user_id', user.id)
+      .single()
+
     const body = await request.json()
     const {
       sync_days_back,
@@ -51,6 +60,9 @@ export async function PATCH(request: Request) {
       drive_folder_id,
       drive_folder_name,
       drive_folder_path,
+      inbox_folder_id,
+      inbox_folder_name,
+      inbox_folder_enabled,
     } = body
 
     const updates: any = {}
@@ -66,16 +78,97 @@ export async function PATCH(request: Request) {
     if (drive_folder_id !== undefined) updates.drive_folder_id = drive_folder_id
     if (drive_folder_name !== undefined) updates.drive_folder_name = drive_folder_name
     if (drive_folder_path !== undefined) updates.drive_folder_path = drive_folder_path
+
+    // Inbox folder settings
+    if (inbox_folder_id !== undefined) updates.inbox_folder_id = inbox_folder_id
+    if (inbox_folder_name !== undefined) updates.inbox_folder_name = inbox_folder_name
+    if (inbox_folder_enabled !== undefined) updates.inbox_folder_enabled = inbox_folder_enabled
     if (subscription_tier !== undefined) {
       updates.subscription_tier = subscription_tier
       // Automatically set sync frequency based on subscription tier
       updates.sync_frequency_minutes = subscription_tier === 'paid' ? 15 : 720
     }
 
+    // Auto-create folder structure if we have a Drive Folder ID
+    const effectiveDriveId = drive_folder_id !== undefined ? drive_folder_id : (currentSettings?.drive_folder_id)
+    const effectiveInboxEnabled = inbox_folder_enabled !== undefined ? inbox_folder_enabled : (currentSettings?.inbox_folder_enabled)
+
+    // Check if we need to run folder structure creation
+    // Run if:
+    // 1. drive_folder_id changed and is not null
+    // 2. inbox_folder_enabled changed to true and we have a drive_folder_id
+    // 3. Just to be safe, if we have a drive_folder_id, let's ensure structure on every save? 
+    //    Maybe overkill. Let's stick to explicit changes or if subfolder IDs are missing.
+    // For simplicity/robustness: If we have a Drive Folder ID, ensure structure.
+
+    if (effectiveDriveId) {
+      // We need a Google token
+      const { data: gmailAccount } = await supabase
+        .from('gmail_accounts')
+        .select('*')
+        .eq('user_id', user.id)
+        .single()
+
+      if (gmailAccount) {
+        try {
+          const tokenResult = await getValidAccessToken(
+            gmailAccount.access_token,
+            gmailAccount.refresh_token,
+            gmailAccount.token_expiry
+          )
+
+          // Update database if token was refreshed
+          if (tokenResult.needsUpdate && tokenResult.newExpiry) {
+            await supabase
+              .from('gmail_accounts')
+              .update({
+                access_token: tokenResult.accessToken,
+                token_expiry: tokenResult.newExpiry,
+              })
+              .eq('id', gmailAccount.id)
+          }
+
+          // Handle Inbox Folder Logic
+          if (inbox_folder_enabled === false && currentSettings?.inbox_folder_id) {
+            // User is disabling inbox, and we have an ID -> Delete it
+            try {
+              await deleteDriveFolder(tokenResult.accessToken, currentSettings.inbox_folder_id)
+              // Clear from updates
+              updates.inbox_folder_id = null
+              updates.inbox_folder_name = null
+            } catch (delErr) {
+              console.error('Failed to delete inbox folder:', delErr)
+              // Proceed with updates anyway, maybe invalid ID
+              updates.inbox_folder_id = null
+              updates.inbox_folder_name = null
+            }
+          } else {
+            // Ensure structure / Create Inbox if needed
+            // Note: createFolderStructure will create inbox if effectiveInboxEnabled is true
+            const structure = await createFolderStructure(
+              tokenResult.accessToken,
+              effectiveDriveId,
+              !!effectiveInboxEnabled
+            )
+
+            // Save subfolder IDs
+            updates.pending_folder_id = structure.pendingId
+            updates.approved_folder_id = structure.approvedId
+            if (structure.inboxId && effectiveInboxEnabled) {
+              updates.inbox_folder_id = structure.inboxId
+              updates.inbox_folder_name = 'Inbox'
+            }
+          }
+
+        } catch (err) {
+          console.error('Failed to ensure folder structure:', err)
+        }
+      }
+    }
+
     const { data: settings, error } = await supabase
       .from('user_settings')
-      .update(updates)
-      .eq('user_id', user.id)
+      .upsert({ user_id: user.id, ...updates }, { onConflict: 'user_id' })
       .select()
       .single()
 
@@ -92,8 +185,10 @@ export async function PATCH(request: Request) {
 
     return NextResponse.json({ settings })
   } catch (error) {
+    console.error('[Settings API] Critical error:', error)
+    const message = error instanceof Error ? error.message : 'Unknown error'
     return NextResponse.json(
-      { error: 'Failed to update settings', details: error instanceof Error ? error.message : 'Unknown error' },
+      { error: 'Failed to update settings', details: message },
       { status: 500 }
     )
   }

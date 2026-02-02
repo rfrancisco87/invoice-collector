@@ -5,14 +5,12 @@ export async function POST(request: Request) {
   try {
     const supabase = await createClient()
 
-    // Get current session
-    const { data: { session } } = await supabase.auth.getSession()
+    // Get current user (validates JWT, unlike getSession which can be spoofed)
+    const { data: { user } } = await supabase.auth.getUser()
 
-    if (!session || !session.user) {
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-
-    const user = session.user
 
     // Delete all user data in order (respecting foreign key constraints)
     const results = {

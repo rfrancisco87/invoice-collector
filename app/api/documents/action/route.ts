@@ -192,6 +192,26 @@ export async function POST(request: Request) {
       })
     }
 
+    // Cleanup: If the document came from the inbox folder, remove the original file
+    // @ts-ignore
+    if (document.source === 'inbox_folder' && document.inbox_file_id) {
+      // Find inbox folder setting to confirm we should delete
+      // (Optional check, but good for safety)
+      if (settings.inbox_folder_id) {
+        try {
+          // @ts-ignore
+          await drive.files.delete({
+            // @ts-ignore
+            fileId: document.inbox_file_id
+          })
+          console.log(`[Action] Cleaned up original inbox file ${document.inbox_file_id}`)
+        } catch (cleanupError) {
+          console.error('[Action] Failed to clean up inbox file:', cleanupError)
+          // Don't fail the request, just log it
+        }
+      }
+    }
+
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Document action error:', error)

@@ -1,10 +1,16 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { ExternalLink, FileText, Calendar, Mail, FolderOpen, Search, CheckCircle2 } from 'lucide-react'
+import { ExternalLink, FileText, Mail, FolderOpen, Search } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 
 interface Document {
   id: string
@@ -45,17 +51,6 @@ export function ApprovedDocumentList({ documents }: ApprovedDocumentListProps) {
         (doc.invoice_number?.toLowerCase().includes(search) ?? false)
     )
   }, [documents, searchTerm])
-
-  const getClassificationLabel = (classification: string) => {
-    switch (classification) {
-      case 'invoice':
-        return 'Fatura'
-      case 'credit_note':
-        return 'Nota de Crédito'
-      default:
-        return 'Outro'
-    }
-  }
 
   const formatCurrency = (value: number | null | undefined, currency: string | null | undefined) => {
     if (value == null) return null
@@ -127,16 +122,16 @@ export function ApprovedDocumentList({ documents }: ApprovedDocumentListProps) {
           <div className="flex-1 min-w-0 max-w-[200px]">
             <span className="text-xs font-medium text-muted-foreground">Fornecedor</span>
           </div>
-          <div className="flex-shrink-0 w-40">
+          <div className="flex-shrink-0 w-32">
             <span className="text-xs font-medium text-muted-foreground">Nº Documento</span>
-          </div>
-          <div className="flex-shrink-0 w-28">
-            <span className="text-xs font-medium text-muted-foreground">Data Aprovação</span>
           </div>
           <div className="flex-shrink-0 w-28 text-right">
             <span className="text-xs font-medium text-muted-foreground">Total</span>
           </div>
-          <div className="flex-shrink-0 ml-auto">
+          <div className="flex-shrink-0 w-40">
+            <span className="text-xs font-medium text-muted-foreground">Localização</span>
+          </div>
+          <div className="flex-shrink-0 w-12 text-right ml-auto">
             <span className="text-xs font-medium text-muted-foreground">Ações</span>
           </div>
         </div>
@@ -185,7 +180,7 @@ export function ApprovedDocumentList({ documents }: ApprovedDocumentListProps) {
                   </div>
 
                   {/* Invoice Number Column */}
-                  <div className="flex-shrink-0 w-40">
+                  <div className="flex-shrink-0 w-32">
                     {doc.invoice_number ? (
                       <p className="text-sm font-medium text-foreground">{doc.invoice_number}</p>
                     ) : (
@@ -193,63 +188,65 @@ export function ApprovedDocumentList({ documents }: ApprovedDocumentListProps) {
                     )}
                   </div>
 
-                  {/* Date Approved Column */}
-                  <div className="flex-shrink-0 w-28">
-                    {doc.approved_at ? (
-                      <div className="flex items-center gap-1 text-sm">
-                        <CheckCircle2 className="h-3 w-3 text-success" />
-                        <span className="text-foreground">{new Date(doc.approved_at).toLocaleDateString('pt-PT')}</span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1 text-sm">
-                        <Calendar className="h-3 w-3 text-muted-foreground" />
-                        <span className="text-foreground">{new Date(doc.received_date).toLocaleDateString('pt-PT')}</span>
-                      </div>
-                    )}
-                  </div>
-
                   {/* Total Column */}
                   <div className="flex-shrink-0 w-28 text-right">
                     {doc.invoice_total ? (
                       <p className="text-sm font-semibold text-foreground">
-                        {doc.currency || '€'} {doc.invoice_total.toFixed(2)}
+                        {formatCurrency(doc.invoice_total, doc.currency)}
                       </p>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                    {doc.is_demo && (
+                      <Badge className="bg-warning/10 text-warning border-warning/20 text-[10px] ml-1">
+                        DEMO
+                      </Badge>
+                    )}
+                  </div>
+
+                  {/* Location Column */}
+                  <div className="flex-shrink-0 w-40">
+                    {doc.drive_folder_path ? (
+                      <TooltipProvider delayDuration={300}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <a
+                              href={`https://drive.google.com/drive/search?q=${encodeURIComponent(doc.drive_folder_path)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                            >
+                              <FolderOpen className="h-3.5 w-3.5 flex-shrink-0" />
+                              <span className="truncate">{doc.drive_folder_path}</span>
+                            </a>
+                          </TooltipTrigger>
+                          <TooltipContent>Abrir pasta no Drive</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     ) : (
                       <span className="text-xs text-muted-foreground">—</span>
                     )}
                   </div>
 
-                  {/* Demo Badge */}
-                  {doc.is_demo && (
-                    <div className="flex-shrink-0">
-                      <Badge className="bg-warning/10 text-warning border-warning/20 text-xs">
-                        DEMO
-                      </Badge>
-                    </div>
-                  )}
-
-                  {/* Folder Path Column (optional) */}
-                  {doc.drive_folder_path && (
-                    <div className="flex-shrink-0 max-w-[150px]">
-                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <FolderOpen className="h-3 w-3 flex-shrink-0" />
-                        <span className="truncate">{doc.drive_folder_path}</span>
-                      </div>
-                    </div>
-                  )}
-
                   {/* Actions Column */}
-                  <div className="flex-shrink-0 ml-auto">
+                  <div className="flex-shrink-0 w-12 flex justify-end ml-auto">
                     {doc.drive_file_id && (
-                      <Button asChild variant="ghost" size="sm" className="h-8 w-8 p-0" title="Ver PDF no Drive">
-                        <a
-                          href={`https://drive.google.com/file/d/${doc.drive_file_id}/view`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          <ExternalLink className="h-4 w-4" />
-                        </a>
-                      </Button>
+                      <TooltipProvider delayDuration={300}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button asChild variant="ghost" size="sm" className="h-8 w-8 p-0">
+                              <a
+                                href={`https://drive.google.com/file/d/${doc.drive_file_id}/view`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                <ExternalLink className="h-4 w-4" />
+                              </a>
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Ver PDF no Drive</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     )}
                   </div>
                 </div>
