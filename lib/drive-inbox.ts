@@ -40,10 +40,12 @@ export async function scanInboxFolder(
     // Build query to find PDF files in the folder
     let query = `'${folderId}' in parents and mimeType='application/pdf' and trashed=false`
 
-    // Add modified time filter if lastSyncDate provided
-    if (lastSyncDate) {
-        query += ` and modifiedTime > '${lastSyncDate.toISOString()}'`
-    }
+    // We do NOT filter by modifiedTime because files moved to the Inbox
+    // might have old modification dates. We rely on DB duplicate checks (file_hash)
+    // to avoid reprocessing.
+    // if (lastSyncDate) {
+    //    query += ` and modifiedTime > '${lastSyncDate.toISOString()}'`
+    // }
 
     const debugInfo: ScanInboxDebugInfo = {
         folderId,

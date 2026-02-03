@@ -66,6 +66,8 @@ export async function PATCH(request: Request) {
       webhook_url,
     } = body
 
+    console.log('DEBUG: Settings PATCH received:', JSON.stringify(body, null, 2))
+
     const updates: any = {}
 
     if (sync_days_back !== undefined) updates.sync_days_back = sync_days_back

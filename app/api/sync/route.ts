@@ -357,12 +357,18 @@ export async function POST(request: Request) {
     // --- INBOX FOLDER SYNC ---
     if (settings.inbox_folder_enabled && settings.inbox_folder_id) {
       processingLog.push(`\n=== STARTING INBOX FOLDER SYNC ===`)
-      processingLog.push(`Scanning folder: ${settings.inbox_folder_name || settings.inbox_folder_id}`)
+      processingLog.push(`Scanning folder ID: ${settings.inbox_folder_id}`)
+      processingLog.push(`Scanning folder Name: ${settings.inbox_folder_name || '(unknown)'}`)
+
 
       try {
         const lastSyncDate = settings.last_inbox_sync_at ? new Date(settings.last_inbox_sync_at) : undefined
+
+
         if (lastSyncDate) {
-          processingLog.push(`Looking for files modified after: ${lastSyncDate.toLocaleString()}`)
+          processingLog.push(`Filter: Looking for files modified after ${lastSyncDate.toISOString()}`)
+        } else {
+          processingLog.push(`Filter: No date filter (First sync or manual override)`)
         }
 
         const { documents: inboxDocs, debug: inboxDebug } = await scanInboxFolder(
@@ -371,7 +377,14 @@ export async function POST(request: Request) {
           lastSyncDate
         )
 
-        processingLog.push(`Found ${inboxDocs.length} new files in inbox folder`)
+
+
+        processingLog.push(`Scanner Result: Found ${inboxDebug.filesFound} total files`)
+
+
+        processingLog.push(`Scanner Result: ${inboxDebug.pdfFilesFound} were PDFs`)
+        processingLog.push(`Scanner Result: ${inboxDebug.filesAfterFilter} matched date filter`)
+        processingLog.push(`Files to process: ${inboxDocs.length}`)
 
         let inboxDocsProcessed = 0
 
@@ -426,6 +439,15 @@ export async function POST(request: Request) {
               if (existingDoc) {
                 processingLog.push(`⊘ DUPLICATE - File already exists: ${existingDoc.filename}`)
                 duplicatesSkipped++
+
+                // MOVED: Even if it's a duplicate, we should remove it from Inbox to clean up
+                try {
+                  await drive.files.delete({ fileId: doc.driveFileId })
+                  processingLog.push(`✓ Duplicate file removed from Inbox (Cleaned up)`)
+                } catch (delErr) {
+                  processingLog.push(`⚠ Failed to remove duplicate from Inbox: ${delErr instanceof Error ? delErr.message : String(delErr)}`)
+                }
+
                 continue
               }
 
@@ -528,6 +550,16 @@ export async function POST(request: Request) {
               inboxDocsProcessed++
               processingLog.push(`✓ SUCCESS - Saved to database`)
 
+              // MOVED: Delete original file from Inbox
+              try {
+                await drive.files.delete({ fileId: doc.driveFileId })
+                processingLog.push(`✓ Original file removed from Inbox (Moved)`)
+              } catch (delErr) {
+                processingLog.push(`⚠ WARNING: Failed to remove file from Inbox: ${delErr instanceof Error ? delErr.message : String(delErr)}`)
+                // We don't fail the whole process if delete fails, but it might lead to duplicate processing next time
+                // (caught by hash check though)
+              }
+
             } catch (error) {
               processingLog.push(`✗ FAILED inbox file - ${error instanceof Error ? error.message : String(error)}`)
             }
@@ -544,6 +576,12 @@ export async function POST(request: Request) {
       } catch (error) {
         processingLog.push(`ERROR in inbox sync: ${error instanceof Error ? error.message : String(error)}`)
       }
+    } else {
+      processingLog.push(`\n=== SKIPPING INBOX SYNC ===`)
+      processingLog.push(`Enabled: ${settings.inbox_folder_enabled}`)
+      processingLog.push(`Folder ID available: ${!!settings.inbox_folder_id}`)
+      if (!settings.inbox_folder_enabled) processingLog.push(`Reason: Feature disabled in settings`)
+      if (!settings.inbox_folder_id) processingLog.push(`Reason: No Inbox folder ID configured`)
     }
 
     processingLog.push(`\n=== PROCESSING COMPLETE ===`)
