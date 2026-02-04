@@ -60,11 +60,14 @@ export async function GET(request: Request) {
       )
     }
 
-    // Get user's Gmail email address
+    // Get user's email address
+    // We use oauth2.userinfo instead of gmail.users.getProfile because
+    // getProfile requires https://www.googleapis.com/auth/gmail.readonly scope
+    // which we might not have if the user selected 'storage' mode.
     oauth2Client.setCredentials(tokens)
-    const gmail = google.gmail({ version: 'v1', auth: oauth2Client })
-    const profile = await gmail.users.getProfile({ userId: 'me' })
-    const gmailEmail = profile.data.emailAddress
+    const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client })
+    const userInfo = await oauth2.userinfo.get()
+    const gmailEmail = userInfo.data.email
 
     if (!gmailEmail) {
       return NextResponse.redirect(

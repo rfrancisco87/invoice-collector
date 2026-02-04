@@ -1,274 +1,241 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { FolderOpen, Plus, Check, AlertCircle } from 'lucide-react'
+import { useEffect, useState, useCallback, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { StepSources, StepMasterFolder, StepEducation, StepConnect } from '@/components/setup/WizardSteps'
+import { createClient } from '@/lib/supabase/client'
+import { AlertCircle } from 'lucide-react'
 
-interface DriveFolder {
-  id: string
-  name: string
-  path: string
-}
+// Define steps
+// Flow: Sources -> Connect (if needed) -> Master Folder -> Education/Seeding
+const STEPS = ['sources', 'connect', 'master_folder', 'education']
 
-export default function SetupPage() {
+function SetupWizard() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const supabase = createClient()
+
+  const [currentStep, setCurrentStep] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
-  const [folders, setFolders] = useState<DriveFolder[]>([])
-  const [selectedFolder, setSelectedFolder] = useState<string | null>(null)
-  const [newFolderName, setNewFolderName] = useState('Invoice Collector')
-  const [showCreateNew, setShowCreateNew] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    loadFolders()
-  }, [])
+  // Data State
+  const [inboundEmail, setInboundEmail] = useState<string | null>(null)
+  const [gmailConnected, setGmailConnected] = useState(false)
+  const [hasGmailScope, setHasGmailScope] = useState(false)
+  const [sources, setSources] = useState({
+    gmail: true,
+    forwarding: false,
+    drive_inbox: false,
+    upload: true
+  })
 
-  const loadFolders = async () => {
+  // Load initial data
+  useEffect(() => {
+    checkExistingSettings()
+    checkGmailConnection()
+
+    // Check if we just came back from Gmail Connect
+    if (searchParams.get('gmail') === 'connected') {
+      setGmailConnected(true)
+      // Advance to Master Folder step if we were connecting
+      // We assume step 1 (connect) -> 2 (master folder)
+      setCurrentStep(2)
+    }
+  }, [searchParams])
+
+  const checkGmailConnection = async () => {
     try {
-      setIsLoading(true)
-      setError(null)
-      const response = await fetch('/api/drive/folders')
+      const res = await fetch('/api/gmail/status')
+      if (res.ok) {
+        const data = await res.json()
+        setGmailConnected(data.connected)
+        setHasGmailScope(data.hasGmail)
+      }
+    } catch (e) {
+      console.error('Failed to check connection', e)
+    }
+  }
+
+  const checkExistingSettings = async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return
+
+    const { data: settings } = await supabase
+      .from('user_settings')
+      .select('*')
+      .eq('user_id', session.user.id)
+      .single()
+
+    if (settings) {
+      if (settings.inbound_email) setInboundEmail(settings.inbound_email)
+      // Parse enabled sources
+      if (settings.enabled_sources && Array.isArray(settings.enabled_sources)) {
+        setSources({
+          gmail: settings.enabled_sources.includes('gmail'),
+          forwarding: settings.enabled_sources.includes('forwarding'),
+          drive_inbox: settings.enabled_sources.includes('drive_inbox'),
+          upload: true
+        })
+      }
+    }
+  }
+
+  // Actions
+  const handleNext = async () => {
+    if (currentStep < STEPS.length - 1) {
+      setCurrentStep(prev => prev + 1)
+    }
+  }
+
+  const handlePrev = () => {
+    if (currentStep > 0) {
+      setCurrentStep(prev => prev - 1)
+    }
+  }
+
+  const saveFolderSelection = async (id: string, name: string, path?: string) => {
+    setIsLoading(true)
+    try {
+      const response = await fetch('/api/drive/folders/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          folderId: id,
+          folderName: name,
+          folderPath: path,
+          createInbox: sources.drive_inbox // Pass true if inbox needed
+        }),
+      })
 
       if (!response.ok) {
-        throw new Error('Falha ao carregar pastas')
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to configure folders')
       }
 
-      const data = await response.json()
-      setFolders(data.folders || [])
-    } catch (err) {
-      setError('Falha ao carregar pastas do Drive. Por favor tente novamente.')
-      console.error('Error loading folders:', err)
+      // Move to next step (Education)
+      handleNext()
+    } catch (e: any) {
+      setError(e.message || 'Failed to configure Master Folder structure')
     } finally {
       setIsLoading(false)
     }
   }
 
-  const handleCreateFolder = async () => {
-    if (!newFolderName.trim()) {
-      setError('Por favor introduza um nome para a pasta')
-      return
-    }
-
+  const generateEmail = useCallback(async () => {
     try {
-      setIsLoading(true)
-      setError(null)
-
-      const response = await fetch('/api/drive/folders/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newFolderName }),
-      })
-
-      if (!response.ok) {
-        throw new Error('Falha ao criar pasta')
-      }
-
+      const response = await fetch('/api/setup/generate-email', { method: 'POST' })
       const data = await response.json()
-      await saveSelection(data.folder.id, data.folder.name, data.folder.path)
-    } catch (err) {
-      setError('Falha ao criar pasta. Por favor tente novamente.')
-      console.error('Error creating folder:', err)
-      setIsLoading(false)
+      if (data.email) setInboundEmail(data.email)
+    } catch (e) {
+      console.error('Failed to generate email', e)
     }
+  }, [])
+
+  const toggleSource = (key: string) => {
+    setSources(prev => ({ ...prev, [key]: !prev[key as keyof typeof prev] }))
   }
 
-  const handleSelectFolder = async () => {
-    if (!selectedFolder) {
-      setError('Por favor seleccione uma pasta')
-      return
-    }
+  const handleFinish = async () => {
+    setIsLoading(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return
 
-    const folder = folders.find(f => f.id === selectedFolder)
-    if (!folder) return
-
-    await saveSelection(folder.id, folder.name, folder.path)
-  }
-
-  const saveSelection = async (folderId: string, folderName: string, folderPath: string) => {
     try {
-      setIsLoading(true)
-      setError(null)
+      // 1. Save sources
+      const enabledSourcesList = Object.keys(sources).filter(k => sources[k as keyof typeof sources])
 
-      const response = await fetch('/api/drive/folders/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          folderId,
-          folderName,
-          folderPath,
-        }),
-      })
+      const { error: settingsError } = await supabase
+        .from('user_settings')
+        .update({
+          enabled_sources: enabledSourcesList,
+          onboarding_completed: true
+        })
+        .eq('user_id', session.user.id)
 
-      if (!response.ok) {
-        throw new Error('Falha ao guardar selecção')
+      if (settingsError) throw settingsError
+
+      // 2. Seed Demo Data
+      try {
+        await fetch('/api/setup/seed', { method: 'POST' })
+      } catch (seedErr) {
+        console.warn('Seeding failed', seedErr)
       }
 
       router.push('/dashboard')
-    } catch (err) {
-      setError('Falha ao guardar selecção. Por favor tente novamente.')
-      console.error('Error saving selection:', err)
+    } catch (e: any) {
+      setError('Failed to save settings: ' + (e.message || e))
       setIsLoading(false)
     }
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
-        <div className="mb-8 text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-            <FolderOpen className="h-6 w-6 text-primary" />
-          </div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">
-            Configurar Google Drive
-          </h1>
-          <p className="mt-2 text-muted-foreground">
-            Escolha onde guardar as suas faturas no Google Drive
-          </p>
-        </div>
+    <div className="w-full max-w-2xl space-y-8">
 
-        {error && (
-          <div className="mb-6 flex items-center gap-2 rounded-lg bg-destructive/10 p-4 text-destructive">
-            <AlertCircle className="h-5 w-5 shrink-0" />
-            <p className="text-sm">{error}</p>
-          </div>
+      {/* Progress Indicator */}
+      <div className="flex justify-center space-x-2">
+        {STEPS.map((step, idx) => (
+          <div key={step} className={`h-2 w-16 rounded-full transition-colors ${idx <= currentStep ? 'bg-primary' : 'bg-muted'}`} />
+        ))}
+      </div>
+
+      {error && (
+        <div className="flex items-center gap-2 rounded-lg bg-destructive/10 p-4 text-destructive">
+          <AlertCircle className="h-5 w-5 shrink-0" />
+          <p className="text-sm">{error}</p>
+        </div>
+      )}
+
+      <div className="transition-all duration-300 ease-in-out">
+        {currentStep === 0 && (
+          <StepSources
+            sources={sources}
+            toggleSource={toggleSource}
+            onNext={handleNext}
+            loading={isLoading}
+          />
         )}
 
-        <div className="space-y-6">
-          {/* Create New Folder Option */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>Criar Nova Pasta</CardTitle>
-                  <CardDescription>
-                    Vamos criar uma nova pasta no seu Google Drive com a estrutura necessária
-                  </CardDescription>
-                </div>
-                <Button
-                  onClick={() => setShowCreateNew(!showCreateNew)}
-                  variant="outline"
-                  size="sm"
-                >
-                  {showCreateNew ? 'Cancelar' : 'Criar Nova'}
-                </Button>
-              </div>
-            </CardHeader>
+        {currentStep === 1 && (
+          <StepConnect
+            isConnected={gmailConnected}
+            onNext={handleNext}
+            onPrev={handlePrev}
+            loading={isLoading}
+            sources={sources}
+            hasGmailScope={hasGmailScope}
+          />
+        )}
 
-            {showCreateNew && (
-              <CardContent className="space-y-4">
-                <div>
-                  <Label htmlFor="folderName">Nome da Pasta</Label>
-                  <Input
-                    type="text"
-                    id="folderName"
-                    value={newFolderName}
-                    onChange={(e) => setNewFolderName(e.target.value)}
-                    placeholder="Invoice Collector"
-                    className="mt-1"
-                  />
-                </div>
-                <Button
-                  onClick={handleCreateFolder}
-                  disabled={isLoading}
-                  className="w-full"
-                >
-                  <Plus className="mr-2 h-4 w-4" />
-                  {isLoading ? 'A criar...' : 'Criar Pasta e Continuar'}
-                </Button>
-              </CardContent>
-            )}
-          </Card>
+        {currentStep === 2 && (
+          <StepMasterFolder
+            loading={isLoading}
+            onNext={handleNext}
+            onPrev={handlePrev}
+            saveFolder={saveFolderSelection}
+          />
+        )}
 
-          {/* Divider */}
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-border" />
-            </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="bg-background px-2 text-muted-foreground">ou</span>
-            </div>
-          </div>
-
-          {/* Select Existing Folder Option */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Seleccionar Pasta Existente</CardTitle>
-              <CardDescription>
-                Escolha uma pasta existente do seu Google Drive
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {isLoading && folders.length === 0 ? (
-                <div className="text-center py-8">
-                  <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-primary border-r-transparent"></div>
-                  <p className="mt-2 text-sm text-muted-foreground">A carregar pastas...</p>
-                </div>
-              ) : folders.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">
-                  Nenhuma pasta encontrada. Crie uma nova pasta acima.
-                </p>
-              ) : (
-                <>
-                  <div className="max-h-64 space-y-2 overflow-y-auto">
-                    {folders.map((folder) => (
-                      <label
-                        key={folder.id}
-                        className={`flex cursor-pointer items-center rounded-lg border p-4 transition-colors ${
-                          selectedFolder === folder.id
-                            ? 'border-primary bg-primary/5'
-                            : 'border-border hover:bg-muted/50'
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          name="folder"
-                          value={folder.id}
-                          checked={selectedFolder === folder.id}
-                          onChange={(e) => setSelectedFolder(e.target.value)}
-                          className="sr-only"
-                        />
-                        <div className={`flex h-5 w-5 items-center justify-center rounded-full border ${
-                          selectedFolder === folder.id
-                            ? 'border-primary bg-primary'
-                            : 'border-muted-foreground'
-                        }`}>
-                          {selectedFolder === folder.id && (
-                            <Check className="h-3 w-3 text-primary-foreground" />
-                          )}
-                        </div>
-                        <div className="ml-3">
-                          <p className="font-medium text-foreground">{folder.name}</p>
-                          {folder.path && (
-                            <p className="text-sm text-muted-foreground">{folder.path}</p>
-                          )}
-                        </div>
-                      </label>
-                    ))}
-                  </div>
-                  <Button
-                    onClick={handleSelectFolder}
-                    disabled={!selectedFolder || isLoading}
-                    className="w-full"
-                  >
-                    {isLoading ? 'A guardar...' : 'Continuar com a Pasta Seleccionada'}
-                  </Button>
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="mt-8 rounded-lg border border-info/30 bg-info/5 p-4">
-          <p className="text-sm text-foreground">
-            <strong>O que acontece a seguir:</strong> Vamos criar uma subpasta &quot;Pendentes&quot; onde as novas faturas serão guardadas.
-            Quando aprovar uma fatura, ela será movida para pastas &quot;Aprovados/MM-AAAA&quot; organizadas por mês.
-          </p>
-        </div>
+        {currentStep === 3 && (
+          <StepEducation
+            sources={sources}
+            inboundEmail={inboundEmail}
+            generateEmail={generateEmail}
+            onFinish={handleFinish}
+            loading={isLoading}
+          />
+        )}
       </div>
+    </div>
+  )
+}
+
+export default function SetupPage() {
+  return (
+    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
+      <Suspense fallback={<div>Loading...</div>}>
+        <SetupWizard />
+      </Suspense>
     </div>
   )
 }

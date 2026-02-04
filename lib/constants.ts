@@ -31,6 +31,14 @@ export const GMAIL_SCOPES = [
 ].join(' ')
 
 /**
+ * Drive-only scopes for when user only needs storage (no email sync)
+ */
+export const DRIVE_SCOPES = [
+  'https://www.googleapis.com/auth/drive',
+  'https://www.googleapis.com/auth/userinfo.email',
+].join(' ')
+
+/**
  * @deprecated Use GMAIL_SCOPES for Gmail connection or GOOGLE_LOGIN_SCOPES for login
  */
 export const GOOGLE_SCOPES = GMAIL_SCOPES

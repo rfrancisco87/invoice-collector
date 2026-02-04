@@ -140,6 +140,7 @@ export async function createFolderStructure(
     inboxId
   }
 }
+
 export async function getFolderHierarchy(accessToken: string, folderId: string): Promise<DriveFolder[]> {
   const drive = await getDriveClient(accessToken)
   const hierarchy: DriveFolder[] = []
@@ -176,6 +177,7 @@ export async function getFolderHierarchy(accessToken: string, folderId: string):
 
   return hierarchy
 }
+
 export async function deleteDriveFolder(
   accessToken: string,
   folderId: string

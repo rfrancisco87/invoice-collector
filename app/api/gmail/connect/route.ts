@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { GMAIL_SCOPES } from '@/lib/constants'
+import { GMAIL_SCOPES, DRIVE_SCOPES } from '@/lib/constants'
 
 /**
  * Gmail Connection - Initiates OAuth flow for Gmail access
@@ -8,7 +8,7 @@ import { GMAIL_SCOPES } from '@/lib/constants'
  * This is SEPARATE from user authentication.
  * User must be logged in first, then they connect their Gmail account.
  */
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -31,11 +31,18 @@ export async function GET() {
     const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/gmail/callback`
 
     // Build Google OAuth URL for Gmail access
+    const { searchParams } = new URL(request.url)
+    const mode = searchParams.get('mode')
+
+    // Choose scopes based on mode
+    // Default to full GMAIL_SCOPES if not specified or if mode is not 'storage'
+    const scope = mode === 'storage' ? DRIVE_SCOPES : GMAIL_SCOPES
+
     const params = new URLSearchParams({
       client_id: process.env.GOOGLE_CLIENT_ID,
       redirect_uri: redirectUri,
       response_type: 'code',
-      scope: GMAIL_SCOPES,
+      scope: scope,
       access_type: 'offline',
       prompt: 'consent', // Always prompt to ensure we get refresh token
       state: user.id, // Pass user ID to callback for verification

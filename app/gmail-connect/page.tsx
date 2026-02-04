@@ -7,6 +7,14 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Mail, CheckCircle, AlertCircle, ArrowRight, Unplug } from 'lucide-react'
 import Link from 'next/link'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 
 function GmailConnectContent() {
   const router = useRouter()
@@ -16,6 +24,7 @@ function GmailConnectContent() {
   const [gmailAccount, setGmailAccount] = useState<{ email: string } | null>(null)
   const [loading, setLoading] = useState(true)
   const [disconnecting, setDisconnecting] = useState(false)
+  const [showDisconnectDialog, setShowDisconnectDialog] = useState(false)
 
   useEffect(() => {
     async function checkGmailConnection() {
@@ -41,15 +50,12 @@ function GmailConnectContent() {
   }, [router])
 
   const handleDisconnect = async () => {
-    if (!confirm('Tem a certeza que pretende desligar a sua conta Gmail?')) {
-      return
-    }
-
     setDisconnecting(true)
     try {
       const response = await fetch('/api/gmail/disconnect', { method: 'POST' })
       if (response.ok) {
         setGmailAccount(null)
+        setShowDisconnectDialog(false)
       }
     } catch (err) {
       console.error('Failed to disconnect:', err)
@@ -122,12 +128,12 @@ function GmailConnectContent() {
 
                 <Button
                   variant="outline"
-                  onClick={handleDisconnect}
+                  onClick={() => setShowDisconnectDialog(true)}
                   disabled={disconnecting}
                   className="w-full text-destructive hover:text-destructive"
                 >
                   <Unplug className="mr-2 h-4 w-4" />
-                  {disconnecting ? 'A desligar...' : 'Desligar Gmail'}
+                  Desligar Gmail
                 </Button>
               </div>
             </>
@@ -143,9 +149,9 @@ function GmailConnectContent() {
               </div>
 
               <Button asChild className="w-full">
-                <a href="/api/gmail/connect">
-                  <Mail className="mr-2 h-4 w-4" />
+                <a href="/api/gmail/connect" className="flex items-center justify-center gap-2">
                   Ligar conta Gmail
+                  <Mail className="h-4 w-4" />
                 </a>
               </Button>
 
@@ -157,6 +163,26 @@ function GmailConnectContent() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={showDisconnectDialog} onOpenChange={setShowDisconnectDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Desligar conta Gmail?</DialogTitle>
+            <DialogDescription>
+              Tem a certeza que pretende desligar a sua conta Gmail?
+              A sincronização automática de faturas será interrompida.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDisconnectDialog(false)}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={handleDisconnect} disabled={disconnecting}>
+              {disconnecting ? 'A desligar...' : 'Sim, desligar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

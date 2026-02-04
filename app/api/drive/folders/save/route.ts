@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createFolderStructure } from '@/lib/google-drive'
+import { getValidAccessToken } from '@/lib/token-refresh'
 
 export async function POST(request: Request) {
   try {
@@ -12,7 +13,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { folderId, folderName, folderPath } = body
+    const { folderId, folderName, folderPath, createInbox } = body
 
     if (!folderId || typeof folderId !== 'string') {
       return NextResponse.json(
@@ -24,34 +25,70 @@ export async function POST(request: Request) {
     // Get Gmail account with access token
     const { data: gmailAccount, error: gmailError } = await supabase
       .from('gmail_accounts')
-      .select('access_token')
+      .select('*')
       .eq('user_id', user.id)
       .single()
 
     if (gmailError || !gmailAccount) {
+      // If we don't have a gmail account (e.g. only manual upload + forwarding?),
+      // we can't create drive folders automatically unless we have SOME token.
+      // But the wizard forces "Connect Account" before this step if any Drive logic is needed.
       return NextResponse.json(
-        { error: 'Gmail account not found' },
+        { error: 'Gmail/Drive account not connected' },
         { status: 404 }
       )
     }
 
-    // Create subfolder structure if selecting existing folder
+    // Get valid access token (will refresh if needed)
+    const tokenResult = await getValidAccessToken(
+      gmailAccount.access_token,
+      gmailAccount.refresh_token,
+      gmailAccount.token_expiry
+    )
+
+    // Update database if token was refreshed
+    if (tokenResult.needsUpdate && tokenResult.newExpiry) {
+      await supabase
+        .from('gmail_accounts')
+        .update({
+          access_token: tokenResult.accessToken,
+          token_expiry: tokenResult.newExpiry,
+        })
+        .eq('id', gmailAccount.id)
+    }
+
+    // Create subfolder structure
+    let inboxId: string | undefined
     try {
-      await createFolderStructure(gmailAccount.access_token, folderId)
+      const structure = await createFolderStructure(
+        tokenResult.accessToken,
+        folderId,
+        !!createInbox // Pass true if inbox requested
+      )
+      inboxId = structure.inboxId
     } catch (error) {
-      console.log('Subfolder structure may already exist:', error)
-      // Continue anyway - subfolders might already exist
+      console.log('Subfolder structure creation error:', error)
+      // We might continue or fail? Better to warn but save main folder
+    }
+
+    // Prepare update payload
+    const updatePayload: any = {
+      drive_folder_id: folderId,
+      drive_folder_name: folderName,
+      drive_folder_path: folderPath,
+      updated_at: new Date().toISOString(),
+    }
+
+    // Create new Inbox Setting if it was requested
+    if (createInbox && inboxId) {
+      updatePayload.inbox_folder_id = inboxId
+      updatePayload.inbox_folder_enabled = true
     }
 
     // Save folder selection to user_settings
     const { error } = await supabase
       .from('user_settings')
-      .update({
-        drive_folder_id: folderId,
-        drive_folder_name: folderName,
-        drive_folder_path: folderPath,
-        updated_at: new Date().toISOString(),
-      })
+      .update(updatePayload)
       .eq('user_id', user.id)
 
     if (error) {
@@ -62,7 +99,7 @@ export async function POST(request: Request) {
       )
     }
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true, inboxId })
   } catch (error) {
     console.error('Error saving Drive folder:', error)
     return NextResponse.json(
