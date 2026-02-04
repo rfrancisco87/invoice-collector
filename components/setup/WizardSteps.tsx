@@ -55,7 +55,7 @@ export function StepSources({
                         <div className="space-y-0.5">
                             <Label className="text-base">Pasta Inbox no Drive</Label>
                             <p className="text-sm text-muted-foreground">
-                                Uma pasta "Inbox" para onde pode arrastar ficheiros.
+                                Uma pasta &quot;Inbox&quot; para onde pode arrastar ficheiros.
                             </p>
                         </div>
                     </div>
@@ -154,7 +154,7 @@ export function StepConnect({ onNext, onPrev, loading, isConnected, sources, has
                     <div className="text-sm text-muted-foreground">
                         <p className="font-medium text-foreground mb-1">Porquê conectar?</p>
                         <ul className="list-disc pl-4 space-y-1">
-                            <li>Para criar a pasta "Invoice Collector" no seu Drive.</li>
+                            <li>Para criar a pasta &quot;Invoice Collector&quot; no seu Drive.</li>
                             {isSyncing && <li>Para digitalizar a sua caixa de entrada.</li>}
                             <li>Pode revogar o acesso a qualquer momento.</li>
                         </ul>
@@ -268,7 +268,7 @@ export function StepEducation({
                             </div>
                             <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-3 rounded border bg-card shadow-sm">
                                 <div className="font-semibold text-sm">Processamento (Pendente)</div>
-                                <div className="text-xs text-muted-foreground">Faturas vão para a pasta "Pendentes". Extraímos os dados automaticamente.</div>
+                                <div className="text-xs text-muted-foreground">Faturas vão para a pasta &quot;Pendentes&quot;. Extraímos os dados automaticamente.</div>
                             </div>
                         </div>
 
@@ -290,7 +290,7 @@ export function StepEducation({
                             </div>
                             <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-3 rounded border bg-card shadow-sm">
                                 <div className="font-semibold text-sm">Contabilidade</div>
-                                <div className="text-xs text-muted-foreground">Movemos para "Aprovados". Partilhe esta pasta com o seu contabilista!</div>
+                                <div className="text-xs text-muted-foreground">Movemos para &quot;Aprovados&quot;. Partilhe esta pasta com o seu contabilista!</div>
                             </div>
                         </div>
 

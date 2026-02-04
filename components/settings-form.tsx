@@ -474,7 +474,7 @@ export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormPr
                   ATENÇÃO
                 </p>
                 <p className="mt-1">
-                  A pasta "Inbox" será <strong>ELIMINADA PERMANENTEMENTE</strong> do seu Google Drive.
+                  A pasta &quot;Inbox&quot; será <strong>ELIMINADA PERMANENTEMENTE</strong> do seu Google Drive.
                   Os ficheiros que estiverem dentro dela também poderão ser perdidos.
                 </p>
               </div>

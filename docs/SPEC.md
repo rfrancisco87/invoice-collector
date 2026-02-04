@@ -12,6 +12,8 @@
 
 This document provides the technical implementation details for the Invoice Collector MVP. It breaks down the PRD requirements into actionable development tasks with specific technical approaches.
 
+**Key Update (v2.0):** Supports Multi-Source Ingestion (Gmail Sync, Email Forwarding, and Drive Upload).
+
 ---
 
 ## 2. Technology Stack & Dependencies
@@ -107,6 +109,8 @@ CREATE TABLE user_settings (
   drive_folder_id TEXT,
   drive_folder_name TEXT,
   drive_folder_path TEXT,
+  inbound_email TEXT UNIQUE, -- New: for forwarding
+  enabled_sources TEXT[], -- New: ['gmail', 'forwarding', 'drive_inbox']
   sync_days_back INTEGER DEFAULT 1,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -119,7 +123,8 @@ CREATE TYPE document_status AS ENUM ('pending', 'approved', 'rejected');
 CREATE TABLE documents (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  gmail_account_id UUID NOT NULL REFERENCES gmail_accounts(id) ON DELETE CASCADE,
+  gmail_account_id UUID REFERENCES gmail_accounts(id) ON DELETE CASCADE, -- Nullable for non-Gmail sources
+  source TEXT DEFAULT 'gmail', -- 'gmail', 'forwarding', 'upload', 'drive_inbox'
   email_message_id TEXT NOT NULL,
   file_hash TEXT NOT NULL,
   subject TEXT,
@@ -372,6 +377,15 @@ invoice-collector/
 │       │   │   └── route.ts      # DELETE disconnect
 │       │   └── sync/
 │       │       └── route.ts      # POST trigger sync
+│       │   └── status/
+│       │       └── route.ts      # GET permissions status
+│       ├── setup/
+│       │   ├── generate-email/
+│       │   │   └── route.ts      # POST generate inbound address
+│       │   └── seed/
+│       │       └── route.ts      # POST create demo data
+│       ├── inbound-email/
+│       │   └── route.ts          # POST Resend webhook handler
 │       ├── documents/
 │       │   ├── route.ts          # GET list documents
 │       │   └── [id]/
