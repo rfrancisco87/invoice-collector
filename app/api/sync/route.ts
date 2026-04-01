@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { requireApiUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { scanGmailForInvoices, calculateFileHash, getGmailClient, getOrCreateLabel, applyLabelToMessage, archiveMessage } from '@/lib/gmail'
 import { getDriveClient } from '@/lib/google-drive'
@@ -8,16 +9,12 @@ import { ingestDocument } from '@/lib/ingestion'
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient()
-
-    // Get current session with provider token
-    const { data: { session } } = await supabase.auth.getSession()
-
-    if (!session || !session.user) {
+    const user = await requireApiUser()
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized - no session' }, { status: 401 })
     }
 
-    const user = session.user
+    const supabase = await createClient()
 
     // Get user settings and Gmail account first
     const [settingsResult, gmailResult] = await Promise.all([

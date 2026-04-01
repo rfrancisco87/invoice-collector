@@ -1,17 +1,14 @@
-import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import { requireCurrentUser } from '@/lib/auth'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { DocumentList } from '@/components/document-list'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Clock, FileCheck, Files } from 'lucide-react'
 
 export default async function DashboardPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user) {
-    redirect('/login')
-  }
+  const user = await requireCurrentUser('/dashboard')
+  const supabase = createAdminClient()
 
   // Fetch pending documents
   const { data: documents } = await supabase

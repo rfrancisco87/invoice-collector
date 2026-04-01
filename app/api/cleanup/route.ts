@@ -1,16 +1,15 @@
 import { NextResponse } from 'next/server'
+import { requireApiUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient()
-
-    // Get current user (validates JWT, unlike getSession which can be spoofed)
-    const { data: { user } } = await supabase.auth.getUser()
-
+    const user = await requireApiUser()
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const supabase = await createClient()
 
     // Delete all user data in order (respecting foreign key constraints)
     const results = {

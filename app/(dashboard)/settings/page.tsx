@@ -1,15 +1,11 @@
-import { createClient } from '@/lib/supabase/server'
-import { redirect } from 'next/navigation'
+import { requireCurrentUser } from '@/lib/auth'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { SettingsForm } from '@/components/settings-form'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 
 export default async function SettingsPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user) {
-    redirect('/login')
-  }
+  const user = await requireCurrentUser('/settings')
+  const supabase = createAdminClient()
 
   const { data: settings } = await supabase
     .from('user_settings')
@@ -36,7 +32,7 @@ export default async function SettingsPage() {
         <CardContent>
           <SettingsForm
             settings={settings}
-            userEmail={user.email || ''}
+            userEmail={user.email}
             gmailEmail={gmailAccount?.email}
           />
         </CardContent>

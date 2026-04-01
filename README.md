@@ -1,19 +1,39 @@
 # invoice-collector
 
-## Owner-only login
+## Login setup
 
-Set `ALLOWED_LOGIN_EMAIL` in your environment to the single email address that should be able to access the app.
+This app now uses its own database-backed login with:
 
-Example:
+- a user profile stored in `profiles`
+- a password hash stored in `app_credentials`
+- a signed app session cookie
+
+### 1. Create the credentials table
+
+Run the SQL in `database/app-auth.sql` in Supabase.
+
+### 2. Set the session secret
+
+Add this to your environment:
 
 ```bash
-ALLOWED_LOGIN_EMAIL=you@example.com
+APP_SESSION_SECRET=replace-with-a-long-random-secret
 ```
 
-Behavior:
+### 3. Create or update the login user and password
 
-- Only that email is allowed to use the app after authentication.
-- Public signup in the UI is disabled.
-- If a different Supabase user signs in, their session is rejected and they are sent back to `/login`.
+Run:
 
-If you do not already have the owner account created, create it once in Supabase Auth using the same email address, then log in normally through the app.
+```bash
+npm run set-password -- you@example.com your-password "Your Name"
+```
+
+That command will:
+
+- create the user in `profiles` if it does not exist
+- set or replace the hashed password in `app_credentials`
+- mark the user as `admin`
+
+### 4. Log in
+
+Start the app and use the same email and password on `/login`.

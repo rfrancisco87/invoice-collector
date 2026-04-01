@@ -1,17 +1,16 @@
 import { NextResponse } from 'next/server'
+import { requireApiUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { nanoid } from 'nanoid'
 
 export async function POST(request: Request) {
     try {
-        const supabase = await createClient()
-        const { data: { session } } = await supabase.auth.getSession()
-
-        if (!session || !session.user) {
+        const user = await requireApiUser()
+        if (!user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
         }
 
-        const { user } = session
+        const supabase = await createClient()
 
         // Check if user already has an inbound email
         const { data: settings } = await supabase

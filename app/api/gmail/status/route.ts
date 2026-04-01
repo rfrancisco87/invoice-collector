@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { requireApiUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { google } from 'googleapis'
 import { getValidAccessToken } from '@/lib/token-refresh'
@@ -7,12 +8,13 @@ export const dynamic = 'force-dynamic'
 
 export async function GET(request: Request) {
     try {
-        const supabase = await createClient()
-        const { data: { user } } = await supabase.auth.getUser()
+        const user = await requireApiUser()
 
         if (!user) {
             return NextResponse.json({ connected: false }, { status: 401 })
         }
+
+        const supabase = await createClient()
 
         const { data: account } = await supabase
             .from('gmail_accounts')
@@ -50,19 +52,19 @@ export async function GET(request: Request) {
                     .eq('id', account.id)
             }
 
-            return NextResponse.json({ connected: true, hasGmail: true })
+            return NextResponse.json({ connected: true, hasGmail: true, email: account.email })
 
         } catch (e: any) {
             // Check if error is due to scope
             const isScopeError = e.message?.includes('Insufficient Permission') || e.code === 403
 
             if (isScopeError) {
-                return NextResponse.json({ connected: true, hasGmail: false })
+                return NextResponse.json({ connected: true, hasGmail: false, email: account.email })
             }
 
             // If other error (e.g. invalid grant), might be disconnected
             console.error('Gmail status check error', e)
-            return NextResponse.json({ connected: true, hasGmail: false, error: e.message })
+            return NextResponse.json({ connected: true, hasGmail: false, email: account.email, error: e.message })
         }
 
     } catch (error) {

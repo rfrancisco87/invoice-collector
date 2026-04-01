@@ -1,10 +1,10 @@
 import { redirect } from 'next/navigation'
-import { getAuthenticatedOwner } from '@/lib/auth'
+import { getCurrentUser } from '@/lib/auth'
 
 export default async function Home() {
-  const { user, isAllowed } = await getAuthenticatedOwner()
+  const user = await getCurrentUser()
 
-  if (user && isAllowed) {
+  if (user) {
     redirect('/dashboard')
   } else {
     redirect('/login')

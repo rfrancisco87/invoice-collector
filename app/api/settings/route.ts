@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { requireApiUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { sendTestEmail } from '@/lib/email'
 import { createFolderStructure, deleteDriveFolder } from '@/lib/google-drive'
@@ -6,12 +7,12 @@ import { getValidAccessToken } from '@/lib/token-refresh'
 
 export async function GET() {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-
+    const user = await requireApiUser()
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const supabase = await createClient()
 
     const { data: settings, error } = await supabase
       .from('user_settings')
@@ -34,12 +35,12 @@ export async function GET() {
 
 export async function PATCH(request: Request) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-
+    const user = await requireApiUser()
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const supabase = await createClient()
 
     // Fetch current settings for reference (needed for effective values)
     const { data: currentSettings } = await supabase
@@ -57,6 +58,8 @@ export async function PATCH(request: Request) {
       gmail_sync_label,
       archive_synced_emails,
       subscription_tier,
+      enabled_sources,
+      onboarding_completed,
       drive_folder_id,
       drive_folder_name,
       drive_folder_path,
@@ -77,6 +80,7 @@ export async function PATCH(request: Request) {
     if (gmail_sync_label !== undefined) updates.gmail_sync_label = gmail_sync_label || null
     if (archive_synced_emails !== undefined) updates.archive_synced_emails = archive_synced_emails
     if (webhook_url !== undefined) updates.webhook_url = webhook_url || null
+    if (enabled_sources !== undefined) updates.enabled_sources = enabled_sources
 
     // Drive settings
     if (drive_folder_id !== undefined) updates.drive_folder_id = drive_folder_id
@@ -176,6 +180,16 @@ export async function PATCH(request: Request) {
       .select()
       .single()
 
+    if (onboarding_completed !== undefined) {
+      await supabase
+        .from('profiles')
+        .update({
+          onboarding_completed: onboarding_completed,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', user.id)
+    }
+
     if (error) {
       console.error('[Settings API] Supabase error:', error)
       return NextResponse.json({
@@ -200,12 +214,12 @@ export async function PATCH(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-
+    const user = await requireApiUser()
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const supabase = await createClient()
 
     const { action } = await request.json()
 

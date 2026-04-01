@@ -1,16 +1,12 @@
-import { createClient } from '@/lib/supabase/server'
-import { redirect } from 'next/navigation'
+import { requireCurrentUser } from '@/lib/auth'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { ApprovedDocumentList } from '@/components/approved-document-list'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { FileCheck, FileText, Receipt, Files } from 'lucide-react'
 
 export default async function ApprovedPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user) {
-    redirect('/login')
-  }
+  const user = await requireCurrentUser('/approved')
+  const supabase = createAdminClient()
 
   // Fetch approved documents
   const { data: documents } = await supabase

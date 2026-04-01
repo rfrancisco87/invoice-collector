@@ -18,7 +18,8 @@ export default function SignupPage() {
             Para manter a app privada, novas contas não podem ser criadas a partir da interface.
           </p>
           <p>
-            Se ainda não criou a sua conta de proprietário, faça-o diretamente no Supabase Auth com o email configurado em <code>ALLOWED_LOGIN_EMAIL</code>.
+            Crie ou atualize o utilizador através do script local:
+            <code className="ml-1">npm run set-password -- you@example.com your-password &quot;Your Name&quot;</code>
           </p>
         </CardContent>
 

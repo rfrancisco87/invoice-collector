@@ -2,7 +2,6 @@
 
 import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Mail, CheckCircle, AlertCircle, ArrowRight, Unplug } from 'lucide-react'
@@ -28,21 +27,14 @@ function GmailConnectContent() {
 
   useEffect(() => {
     async function checkGmailConnection() {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-
-      if (!user) {
+      const response = await fetch('/api/gmail/status')
+      if (response.status === 401) {
         router.push('/login')
         return
       }
 
-      const { data: account } = await supabase
-        .from('gmail_accounts')
-        .select('email')
-        .eq('user_id', user.id)
-        .single()
-
-      setGmailAccount(account)
+      const data = await response.json()
+      setGmailAccount(data.connected ? { email: data.email } : null)
       setLoading(false)
     }
 

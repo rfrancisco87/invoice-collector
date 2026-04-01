@@ -8,11 +8,9 @@ import { HelpButton } from './help-button'
 interface HeaderProps {
   user: {
     id: string
-    email?: string | null
-    user_metadata?: {
-      full_name?: string
-      avatar_url?: string
-    }
+    email: string
+    fullName?: string | null
+    avatarUrl?: string | null
   }
   showSync?: boolean
   isAdmin?: boolean

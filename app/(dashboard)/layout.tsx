@@ -1,4 +1,5 @@
-import { requireAuthenticatedOwner } from '@/lib/auth'
+import { requireCurrentUser } from '@/lib/auth'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { Header } from '@/components/layout/header'
 import { InternalNav } from '@/components/layout/internal-nav'
 import { GmailBanner } from '@/components/gmail-banner'
@@ -9,7 +10,8 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode
 }) {
-  const { supabase, user } = await requireAuthenticatedOwner('/login')
+  const user = await requireCurrentUser('/dashboard')
+  const supabase = createAdminClient()
 
   // Check if Gmail is connected
   const { data: gmailAccount } = await supabase

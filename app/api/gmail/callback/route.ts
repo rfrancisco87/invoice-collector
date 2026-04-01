@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { requireApiUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { google } from 'googleapis'
 
@@ -32,8 +33,8 @@ export async function GET(request: Request) {
     }
 
     // Verify user is authenticated and matches state
+    const user = await requireApiUser()
     const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
 
     if (!user || user.id !== state) {
       return NextResponse.redirect(

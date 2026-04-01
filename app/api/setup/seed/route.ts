@@ -1,29 +1,16 @@
 import { NextResponse } from 'next/server'
+import { requireApiUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
-import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { nanoid } from 'nanoid'
 
 export async function POST(request: Request) {
     try {
-        // 1. Get User ID from Session
-        const supabase = await createClient()
-        const { data: { user } } = await supabase.auth.getUser()
-
+        const user = await requireApiUser()
         if (!user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
         }
 
-        // 2. Perform Insert using Service Role (Bypassing RLS)
-        const supabaseAdmin = createAdminClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-            {
-                auth: {
-                    persistSession: false,
-                    autoRefreshToken: false,
-                }
-            }
-        )
+        const supabase = await createClient()
 
         // Create a fake invoice record
         const fakeInvoice = {
@@ -55,7 +42,7 @@ export async function POST(request: Request) {
             // extract_data removed as it does not exist
         }
 
-        const { data, error } = await supabaseAdmin
+        const { data, error } = await supabase
             .from('documents')
             .insert(fakeInvoice)
             .select()

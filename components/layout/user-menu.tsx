@@ -1,7 +1,6 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,26 +15,23 @@ import { User, Settings, LogOut, Shield } from 'lucide-react'
 interface UserMenuProps {
   user: {
     id: string
-    email?: string | null
-    user_metadata?: {
-      full_name?: string
-      avatar_url?: string
-    }
+    email: string
+    fullName?: string | null
+    avatarUrl?: string | null
   }
   isAdmin?: boolean
 }
 
 export function UserMenu({ user, isAdmin = false }: UserMenuProps) {
   const router = useRouter()
-  const supabase = createClient()
 
   const handleLogout = async () => {
-    await supabase.auth.signOut()
+    await fetch('/api/auth/logout', { method: 'POST' })
     router.push('/login')
     router.refresh()
   }
 
-  const displayName = user.user_metadata?.full_name || user.email || 'Utilizador'
+  const displayName = user.fullName || user.email || 'Utilizador'
   const initials = displayName
     .split(' ')
     .map((n) => n[0])
@@ -47,9 +43,9 @@ export function UserMenu({ user, isAdmin = false }: UserMenuProps) {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" className="relative h-9 w-9 rounded-full p-0">
-          {user.user_metadata?.avatar_url ? (
+          {user.avatarUrl ? (
             <img
-              src={user.user_metadata.avatar_url}
+              src={user.avatarUrl}
               alt={displayName}
               className="h-full w-full rounded-full object-cover"
             />

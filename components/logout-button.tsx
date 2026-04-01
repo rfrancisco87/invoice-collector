@@ -8,7 +8,8 @@ export function LogoutButton() {
 
   const handleLogout = async () => {
     setIsLoading(true)
-    window.location.href = '/api/auth/logout'
+    await fetch('/api/auth/logout', { method: 'POST' })
+    window.location.href = '/login'
   }
 
   return (

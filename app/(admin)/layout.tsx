@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
-import { requireAuthenticatedOwner } from '@/lib/auth'
+import { requireCurrentUser } from '@/lib/auth'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { Header } from '@/components/layout/header'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
@@ -9,7 +10,8 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode
 }) {
-  const { supabase, user } = await requireAuthenticatedOwner('/login')
+  const user = await requireCurrentUser('/admin')
+  const supabase = createAdminClient()
 
   // Check if user is admin
   const { data: profile } = await supabase

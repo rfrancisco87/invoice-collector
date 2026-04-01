@@ -1,11 +1,13 @@
-import { requireAuthenticatedOwner } from '@/lib/auth'
+import { requireCurrentUser } from '@/lib/auth'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Users, Mail, RefreshCw, FileText, CheckCircle, Clock, AlertCircle } from 'lucide-react'
 
 export default async function AdminPage() {
-  const { supabase, user } = await requireAuthenticatedOwner('/login')
+  const user = await requireCurrentUser('/admin')
+  const supabase = createAdminClient()
 
   // Check admin role (layout already does this, but double-check)
   const { data: profile } = await supabase

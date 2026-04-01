@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { requireApiUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { google } from 'googleapis'
 
@@ -10,15 +11,15 @@ import { google } from 'googleapis'
  */
 export async function POST() {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-
+    const user = await requireApiUser()
     if (!user) {
       return NextResponse.json(
         { error: 'Não autorizado' },
         { status: 401 }
       )
     }
+
+    const supabase = await createClient()
 
     // Get current gmail account to revoke tokens
     const { data: gmailAccount } = await supabase

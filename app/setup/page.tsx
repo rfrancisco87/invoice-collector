@@ -3,7 +3,6 @@
 import { useEffect, useState, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { StepSources, StepMasterFolder, StepEducation, StepConnect } from '@/components/setup/WizardSteps'
-import { createClient } from '@/lib/supabase/client'
 import { AlertCircle } from 'lucide-react'
 
 // Define steps
@@ -13,7 +12,6 @@ const STEPS = ['sources', 'connect', 'master_folder', 'education']
 function SetupWizard() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const supabase = createClient()
 
   const [currentStep, setCurrentStep] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
@@ -58,14 +56,10 @@ function SetupWizard() {
   }
 
   const checkExistingSettings = async () => {
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) return
-
-    const { data: settings } = await supabase
-      .from('user_settings')
-      .select('*')
-      .eq('user_id', session.user.id)
-      .single()
+    const response = await fetch('/api/settings')
+    if (!response.ok) return
+    const data = await response.json()
+    const settings = data.settings
 
     if (settings) {
       if (settings.inbound_email) setInboundEmail(settings.inbound_email)
@@ -138,22 +132,30 @@ function SetupWizard() {
 
   const handleFinish = async () => {
     setIsLoading(true)
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) return
 
     try {
       // 1. Save sources
       const enabledSourcesList = Object.keys(sources).filter(k => sources[k as keyof typeof sources])
 
-      const { error: settingsError } = await supabase
-        .from('user_settings')
-        .update({
+      const settingsResponse = await fetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           enabled_sources: enabledSourcesList,
           onboarding_completed: true
-        })
-        .eq('user_id', session.user.id)
+        }),
+      })
 
-      if (settingsError) throw settingsError
+      if (!settingsResponse.ok) {
+        const data = await settingsResponse.json().catch(() => null)
+        throw new Error(data?.error || 'Failed to save settings')
+      }
+
+      await fetch('/api/onboarding/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'complete' }),
+      })
 
       // 2. Seed Demo Data
       try {

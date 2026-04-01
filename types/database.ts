@@ -20,6 +20,9 @@ export interface Profile {
   full_name: string | null
   avatar_url: string | null
   role: UserRole
+  onboarding_completed?: boolean
+  onboarding_step?: number
+  demo_invoice_created?: boolean
   created_at: string
   updated_at: string
 }
@@ -67,6 +70,9 @@ export interface Database {
           full_name: string | null
           avatar_url: string | null
           role: UserRole
+          onboarding_completed?: boolean
+          onboarding_step?: number
+          demo_invoice_created?: boolean
           created_at: string
           updated_at: string
         }
@@ -76,6 +82,9 @@ export interface Database {
           full_name?: string | null
           avatar_url?: string | null
           role?: UserRole
+          onboarding_completed?: boolean
+          onboarding_step?: number
+          demo_invoice_created?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -85,6 +94,29 @@ export interface Database {
           full_name?: string | null
           avatar_url?: string | null
           role?: UserRole
+          onboarding_completed?: boolean
+          onboarding_step?: number
+          demo_invoice_created?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      app_credentials: {
+        Row: {
+          profile_id: string
+          password_hash: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          profile_id: string
+          password_hash: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          profile_id?: string
+          password_hash?: string
           created_at?: string
           updated_at?: string
         }
@@ -138,10 +170,12 @@ export interface Database {
           auto_sync_enabled: boolean
           email_notifications_enabled: boolean
           notification_email: string | null
+          inbound_email?: string | null
           last_auto_sync_at: string | null
           webhook_url: string | null
           gmail_sync_label: string | null
           archive_synced_emails: boolean
+          enabled_sources?: string[]
           subscription_tier: 'free' | 'paid'
           sync_frequency_minutes: number
           created_at: string
@@ -163,10 +197,12 @@ export interface Database {
           auto_sync_enabled?: boolean
           email_notifications_enabled?: boolean
           notification_email?: string | null
+          inbound_email?: string | null
           last_auto_sync_at?: string | null
           webhook_url?: string | null
           gmail_sync_label?: string | null
           archive_synced_emails?: boolean
+          enabled_sources?: string[]
           subscription_tier?: 'free' | 'paid'
           sync_frequency_minutes?: number
           created_at?: string
@@ -188,10 +224,12 @@ export interface Database {
           auto_sync_enabled?: boolean
           email_notifications_enabled?: boolean
           notification_email?: string | null
+          inbound_email?: string | null
           last_auto_sync_at?: string | null
           webhook_url?: string | null
           gmail_sync_label?: string | null
           archive_synced_emails?: boolean
+          enabled_sources?: string[]
           subscription_tier?: 'free' | 'paid'
           sync_frequency_minutes?: number
           created_at?: string
@@ -215,6 +253,7 @@ export interface Database {
           confidence_score: number | null
           was_reclassified: boolean
           status: DocumentStatus
+          is_demo?: boolean
           drive_file_id: string | null
           drive_folder_path: string | null
           source: DocumentSource
@@ -225,6 +264,7 @@ export interface Database {
           invoice_number: string | null
           issue_date: string | null
           supplier_name: string | null
+          invoice_date?: string | null
           supplier_vat_number: string | null
           total_without_vat: number | null
           total_vat: number | null
@@ -251,6 +291,7 @@ export interface Database {
           confidence_score?: number | null
           was_reclassified?: boolean
           status?: DocumentStatus
+          is_demo?: boolean
           drive_file_id?: string | null
           drive_folder_path?: string | null
           source?: DocumentSource
@@ -261,6 +302,7 @@ export interface Database {
           invoice_number?: string | null
           issue_date?: string | null
           supplier_name?: string | null
+          invoice_date?: string | null
           supplier_vat_number?: string | null
           total_without_vat?: number | null
           total_vat?: number | null
@@ -287,6 +329,7 @@ export interface Database {
           confidence_score?: number | null
           was_reclassified?: boolean
           status?: DocumentStatus
+          is_demo?: boolean
           drive_file_id?: string | null
           drive_folder_path?: string | null
           source?: DocumentSource
@@ -297,6 +340,7 @@ export interface Database {
           invoice_number?: string | null
           issue_date?: string | null
           supplier_name?: string | null
+          invoice_date?: string | null
           supplier_vat_number?: string | null
           total_without_vat?: number | null
           total_vat?: number | null
