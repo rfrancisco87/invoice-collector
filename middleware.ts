@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { getAllowedOwnerEmail, isAllowedOwnerEmail } from '@/lib/auth-config'
 
 /**
  * Add security headers to response
@@ -38,8 +39,39 @@ function addSecurityHeaders(response: NextResponse): NextResponse {
   return response
 }
 
+function clearSupabaseCookies(request: NextRequest, response: NextResponse) {
+  request.cookies.getAll().forEach(({ name }) => {
+    if (name.startsWith('sb-')) {
+      response.cookies.set(name, '', {
+        expires: new Date(0),
+        maxAge: 0,
+        path: '/',
+      })
+    }
+  })
+
+  return response
+}
+
+function unauthorizedResponse(request: NextRequest, pathname: string) {
+  if (pathname.startsWith('/api')) {
+    const response = NextResponse.json(
+      { error: 'Unauthorized' },
+      { status: 401 }
+    )
+    return addSecurityHeaders(clearSupabaseCookies(request, response))
+  }
+
+  const redirectUrl = new URL('/login', request.url)
+  redirectUrl.searchParams.set('error', 'unauthorized_user')
+
+  const response = NextResponse.redirect(redirectUrl)
+  return addSecurityHeaders(clearSupabaseCookies(request, response))
+}
+
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname
+  const allowedOwnerEmail = getAllowedOwnerEmail()
 
   // Skip middleware for callbacks to avoid interfering with OAuth flows
   if (pathname === '/auth/callback' || pathname === '/api/gmail/callback') {
@@ -81,10 +113,17 @@ export async function middleware(request: NextRequest) {
   const publicRoutes = ['/login', '/signup', '/forgot-password', '/reset-password']
   const protectedRoutes = ['/dashboard', '/setup', '/settings', '/approved', '/gmail-connect']
   const adminRoutes = ['/admin']
+  const publicApiRoutes = ['/api/inbound-email', '/api/cron/sync', '/api/auth/google', '/api/auth/logout']
 
   const isPublicRoute = publicRoutes.includes(pathname)
   const isProtectedRoute = protectedRoutes.some(route => pathname.startsWith(route))
   const isAdminRoute = adminRoutes.some(route => pathname.startsWith(route))
+  const isApiRoute = pathname.startsWith('/api')
+  const isProtectedApiRoute = isApiRoute && !publicApiRoutes.some(route => pathname.startsWith(route))
+
+  if (allowedOwnerEmail && user && !isAllowedOwnerEmail(user.email)) {
+    return unauthorizedResponse(request, pathname)
+  }
 
   // Redirect unauthenticated users from protected routes
   if ((isProtectedRoute || isAdminRoute) && !user) {
@@ -92,6 +131,11 @@ export async function middleware(request: NextRequest) {
     redirectUrl.searchParams.set('redirect', pathname)
     const redirectResponse = NextResponse.redirect(redirectUrl)
     return addSecurityHeaders(redirectResponse)
+  }
+
+  if (isProtectedApiRoute && !user) {
+    const response = NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return addSecurityHeaders(response)
   }
 
   // Redirect authenticated users away from public auth pages

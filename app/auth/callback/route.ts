@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { isAllowedOwnerEmail } from '@/lib/auth-config'
 
 /**
  * Auth Callback Handler
@@ -24,6 +25,11 @@ export async function GET(request: Request) {
     }
 
     if (session) {
+      if (!isAllowedOwnerEmail(session.user.email)) {
+        await supabase.auth.signOut()
+        return NextResponse.redirect(`${origin}/login?error=unauthorized_user`)
+      }
+
       // Ensure user has settings (profile is created via trigger)
       const { data: settings } = await supabase
         .from('user_settings')

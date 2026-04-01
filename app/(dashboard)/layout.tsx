@@ -1,5 +1,4 @@
-import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { requireAuthenticatedOwner } from '@/lib/auth'
 import { Header } from '@/components/layout/header'
 import { InternalNav } from '@/components/layout/internal-nav'
 import { GmailBanner } from '@/components/gmail-banner'
@@ -10,12 +9,7 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode
 }) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user) {
-    redirect('/login')
-  }
+  const { supabase, user } = await requireAuthenticatedOwner('/login')
 
   // Check if Gmail is connected
   const { data: gmailAccount } = await supabase

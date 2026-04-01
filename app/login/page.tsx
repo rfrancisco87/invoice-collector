@@ -27,6 +27,7 @@ function LoginForm() {
       auth_failed: 'Falha na autenticação. Por favor tente novamente.',
       session_mismatch: 'Sessão expirada. Por favor inicie sessão novamente.',
       invalid_credentials: 'Email ou palavra-passe inválidos.',
+      unauthorized_user: 'Esta conta não está autorizada a aceder à aplicação.',
     }
     return messages[code] || 'Ocorreu um erro. Por favor tente novamente.'
   }
@@ -92,7 +93,7 @@ function LoginForm() {
         <CardHeader className="text-center space-y-2">
           <CardTitle className="text-2xl font-bold tracking-tight">Invoice Collector</CardTitle>
           <CardDescription>
-            Inicie sessão para gerir as suas faturas
+            Inicie sessão com a conta autorizada para gerir as suas faturas
           </CardDescription>
         </CardHeader>
 
@@ -191,10 +192,7 @@ function LoginForm() {
 
         <CardFooter className="flex flex-col space-y-4">
           <div className="text-center text-sm text-muted-foreground">
-            Não tem conta?{' '}
-            <Link href="/signup" className="font-medium text-primary hover:underline">
-              Criar conta
-            </Link>
+            O registo público está desativado para manter esta aplicação privada.
           </div>
         </CardFooter>
       </Card>
