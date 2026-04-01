@@ -43,7 +43,7 @@ export async function POST(request: Request) {
       )
     }
 
-    return applyLoginSession(NextResponse.json({ success: true }), profile.id)
+    return await applyLoginSession(NextResponse.json({ success: true }), profile.id)
   } catch (error) {
     console.error('[Auth Login] Failed:', error)
     return NextResponse.json({ error: 'Login failed.' }, { status: 500 })

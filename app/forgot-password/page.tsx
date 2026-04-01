@@ -14,11 +14,11 @@ export default function ForgotPasswordPage() {
         </CardHeader>
         <CardContent className="space-y-3 text-sm text-muted-foreground">
           <p>
-            To change the login password, run the local script:
+            Password recovery is not available from the public interface.
           </p>
-          <code className="block rounded bg-muted px-3 py-2">
-            npm run set-password -- you@example.com new-password &quot;Your Name&quot;
-          </code>
+          <p>
+            Use the existing admin access and your internal setup flow to manage credentials.
+          </p>
         </CardContent>
         <CardFooter className="justify-center">
           <Link href="/login">

@@ -121,7 +121,7 @@ function LoginForm() {
 
         <CardFooter className="flex flex-col space-y-4">
           <div className="text-center text-sm text-muted-foreground">
-            A palavra-passe deste utilizador é definida na base de dados através do script de setup.
+            A aplicação está protegida por um único utilizador configurado na base de dados.
           </div>
         </CardFooter>
       </Card>

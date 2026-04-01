@@ -18,8 +18,7 @@ export default function SignupPage() {
             Para manter a app privada, novas contas não podem ser criadas a partir da interface.
           </p>
           <p>
-            Crie ou atualize o utilizador através do script local:
-            <code className="ml-1">npm run set-password -- you@example.com your-password &quot;Your Name&quot;</code>
+            O acesso é gerido internamente e apenas o utilizador existente pode entrar.
           </p>
         </CardContent>
 

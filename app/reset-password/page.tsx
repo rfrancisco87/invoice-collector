@@ -13,10 +13,8 @@ export default function ResetPasswordPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 text-sm text-muted-foreground">
-          <p>Use the local setup script to change the password:</p>
-          <code className="block rounded bg-muted px-3 py-2">
-            npm run set-password -- you@example.com new-password &quot;Your Name&quot;
-          </code>
+          <p>Password reset is not exposed through this interface.</p>
+          <p>Manage credentials through your internal admin setup instead.</p>
         </CardContent>
         <CardFooter className="justify-center">
           <Link href="/login">

@@ -7,8 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "type-check": "tsc --noEmit",
-    "set-password": "node scripts/set-app-password.mjs"
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "@google-cloud/documentai": "^8.12.0",

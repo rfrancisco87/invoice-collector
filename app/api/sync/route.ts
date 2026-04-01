@@ -6,6 +6,7 @@ import { getDriveClient } from '@/lib/google-drive'
 import { getValidAccessToken } from '@/lib/token-refresh'
 import { scanInboxFolder } from '@/lib/drive-inbox'
 import { ingestDocument } from '@/lib/ingestion'
+import { sendNewDocumentsEmail } from '@/lib/email'
 
 export async function POST(request: Request) {
   try {
@@ -144,6 +145,15 @@ export async function POST(request: Request) {
       let documentsFound = 0
       let duplicatesSkipped = 0
       const processingLog: string[] = []
+      const newDocuments: Array<{
+        id: string
+        filename: string
+        sender: string
+        subject: string
+        received_date: string
+        final_classification: string
+        confidence_score: number
+      }> = []
 
       processingLog.push(`=== STARTING DOCUMENT PROCESSING ===`)
       processingLog.push(`Total attachments to process: ${attachments.length}`)
@@ -191,6 +201,20 @@ export async function POST(request: Request) {
           if (result.success) {
             if (result.action === 'processed') {
               documentsFound++
+              if (result.documentId) {
+                const { data: insertedDoc } = await supabase
+                  .from('documents')
+                  .select('id, filename, sender, subject, received_date, final_classification, confidence_score')
+                  .eq('id', result.documentId)
+                  .single()
+
+                if (insertedDoc) {
+                  newDocuments.push({
+                    ...insertedDoc,
+                    confidence_score: insertedDoc.confidence_score ?? 0,
+                  })
+                }
+              }
 
               // --- POST-PROCESSING ACTIONS (Label & Archive) ---
               // Step 8: Apply Gmail label to mark as synced
@@ -284,6 +308,20 @@ export async function POST(request: Request) {
                   if (result.action === 'processed') {
                     documentsFound++
                     inboxDocsProcessed++
+                    if (result.documentId) {
+                      const { data: insertedDoc } = await supabase
+                        .from('documents')
+                        .select('id, filename, sender, subject, received_date, final_classification, confidence_score')
+                        .eq('id', result.documentId)
+                        .single()
+
+                      if (insertedDoc) {
+                        newDocuments.push({
+                          ...insertedDoc,
+                          confidence_score: insertedDoc.confidence_score ?? 0,
+                        })
+                      }
+                    }
 
                     // Clean up Inbox file (Move behavior)
                     try {
@@ -339,6 +377,23 @@ export async function POST(request: Request) {
           completed_at: new Date().toISOString(),
         })
         .eq('id', syncJob.id)
+
+      if (settings.email_notifications_enabled && newDocuments.length > 0) {
+        const targetEmail = settings.notification_email?.trim() || user.email
+
+        if (targetEmail) {
+          try {
+            await sendNewDocumentsEmail(targetEmail, newDocuments, settings.drive_folder_id)
+            processingLog.push(`✓ Notification email sent to ${targetEmail}`)
+          } catch (emailError) {
+            const emailErrorMessage =
+              emailError instanceof Error ? emailError.message : String(emailError)
+            processingLog.push(`⚠ Failed to send notification email: ${emailErrorMessage}`)
+          }
+        } else {
+          processingLog.push('⚠ Email notifications enabled but no destination email configured')
+        }
+      }
 
       return NextResponse.json({
         success: true,

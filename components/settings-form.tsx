@@ -127,14 +127,22 @@ export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormPr
       const response = await fetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'test_email' }),
+        body: JSON.stringify({
+          action: 'test_email',
+          notification_email: formData.notification_email,
+        }),
       })
 
       if (!response.ok) {
-        throw new Error('Falha ao enviar email de teste')
+        const data = await response.json().catch(() => null)
+        throw new Error(data?.details || data?.error || 'Falha ao enviar email de teste')
       }
 
-      setMessage({ type: 'success', text: 'Email de teste enviado! Verifique a sua caixa de entrada.' })
+      const data = await response.json().catch(() => null)
+      setMessage({
+        type: 'success',
+        text: data?.message || 'Email de teste enviado! Verifique a sua caixa de entrada.'
+      })
     } catch (error) {
       setMessage({
         type: 'error',
@@ -499,4 +507,3 @@ export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormPr
     </div >
   )
 }
-

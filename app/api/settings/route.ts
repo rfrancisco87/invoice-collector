@@ -76,7 +76,11 @@ export async function PATCH(request: Request) {
     if (sync_days_back !== undefined) updates.sync_days_back = sync_days_back
     if (auto_sync_enabled !== undefined) updates.auto_sync_enabled = auto_sync_enabled
     if (email_notifications_enabled !== undefined) updates.email_notifications_enabled = email_notifications_enabled
-    if (notification_email !== undefined) updates.notification_email = notification_email
+    if (notification_email !== undefined) {
+      const normalizedNotificationEmail =
+        typeof notification_email === 'string' ? notification_email.trim() : notification_email
+      updates.notification_email = normalizedNotificationEmail || null
+    }
     if (gmail_sync_label !== undefined) updates.gmail_sync_label = gmail_sync_label || null
     if (archive_synced_emails !== undefined) updates.archive_synced_emails = archive_synced_emails
     if (webhook_url !== undefined) updates.webhook_url = webhook_url || null
@@ -221,7 +225,8 @@ export async function POST(request: Request) {
 
     const supabase = await createClient()
 
-    const { action } = await request.json()
+    const body = await request.json()
+    const { action, notification_email } = body
 
     if (action === 'test_email') {
       // Check if Resend API key is configured
@@ -241,7 +246,9 @@ export async function POST(request: Request) {
         .eq('user_id', user.id)
         .single()
 
-      const emailTo = (settings && 'notification_email' in settings) ? settings.notification_email : user.email
+      const requestedTestEmail =
+        typeof notification_email === 'string' ? notification_email.trim() : ''
+      const emailTo = requestedTestEmail || settings?.notification_email?.trim() || user.email
 
       if (!emailTo) {
         return NextResponse.json({ error: 'No email address configured' }, { status: 400 })
