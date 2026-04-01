@@ -163,6 +163,7 @@ export interface Database {
           inbox_folder_id: string | null
           inbox_folder_name: string | null
           inbox_folder_enabled: boolean
+          inbox_folder_mode?: 'managed' | 'existing' | null
           pending_folder_id: string | null
           approved_folder_id: string | null
           last_inbox_sync_at: string | null
@@ -190,6 +191,7 @@ export interface Database {
           inbox_folder_id?: string | null
           inbox_folder_name?: string | null
           inbox_folder_enabled?: boolean
+          inbox_folder_mode?: 'managed' | 'existing' | null
           pending_folder_id?: string | null
           approved_folder_id?: string | null
           last_inbox_sync_at?: string | null
@@ -217,6 +219,7 @@ export interface Database {
           inbox_folder_id?: string | null
           inbox_folder_name?: string | null
           inbox_folder_enabled?: boolean
+          inbox_folder_mode?: 'managed' | 'existing' | null
           pending_folder_id?: string | null
           approved_folder_id?: string | null
           last_inbox_sync_at?: string | null

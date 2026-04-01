@@ -32,6 +32,7 @@ interface Settings {
   inbox_folder_id?: string | null
   inbox_folder_name?: string | null
   inbox_folder_enabled?: boolean
+  inbox_folder_mode?: 'managed' | 'existing' | null
   webhook_url?: string | null
 }
 
@@ -42,6 +43,14 @@ interface SettingsFormProps {
 }
 
 export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormProps) {
+  const initialInboxMode: 'managed' | 'existing' =
+    settings?.inbox_folder_enabled &&
+      settings?.inbox_folder_id &&
+      settings?.inbox_folder_name &&
+      settings.inbox_folder_name !== 'Inbox'
+      ? 'existing'
+      : 'managed'
+
   const [formData, setFormData] = useState({
     sync_days_back: settings?.sync_days_back || 1,
     auto_sync_enabled: settings?.auto_sync_enabled ?? true,
@@ -56,6 +65,7 @@ export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormPr
     inbox_folder_id: settings?.inbox_folder_id || null,
     inbox_folder_name: settings?.inbox_folder_name || null,
     inbox_folder_enabled: settings?.inbox_folder_enabled ?? false,
+    inbox_folder_mode: settings?.inbox_folder_mode || initialInboxMode,
     webhook_url: settings?.webhook_url || '',
   })
   const [isSaving, setIsSaving] = useState(false)
@@ -69,9 +79,19 @@ export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormPr
     if (
       settings?.inbox_folder_enabled &&
       !formData.inbox_folder_enabled &&
-      settings?.inbox_folder_id
+      settings?.inbox_folder_id &&
+      initialInboxMode === 'managed'
     ) {
       setShowDeleteConfirm(true)
+      return
+    }
+
+    if (
+      formData.inbox_folder_enabled &&
+      formData.inbox_folder_mode === 'existing' &&
+      !formData.inbox_folder_id
+    ) {
+      setMessage({ type: 'error', text: 'Selecione uma pasta existente para a Inbox.' })
       return
     }
 
@@ -271,14 +291,64 @@ export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormPr
           </p>
 
           {formData.inbox_folder_enabled && (
-            <div className="ml-6 p-3 bg-muted rounded-md text-sm text-muted-foreground border border-border">
-              <p>
-                A pasta <strong>Inbox</strong> será criada e mantida automaticamente dentro da sua pasta principal do Google Drive:
-              </p>
-              <div className="mt-2 flex items-center gap-2 font-medium text-foreground">
-                <FolderInput className="h-4 w-4" />
-                <span>{formData.drive_folder_name || 'Pasta Principal'} / Inbox</span>
+            <div className="ml-6 space-y-4">
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <input
+                    id="inbox_mode_managed"
+                    type="radio"
+                    name="inbox_folder_mode"
+                    checked={formData.inbox_folder_mode === 'managed'}
+                    onChange={() => setFormData(prev => ({
+                      ...prev,
+                      inbox_folder_mode: 'managed',
+                    }))}
+                    className="h-4 w-4 border-input text-primary focus:ring-primary"
+                  />
+                  <Label htmlFor="inbox_mode_managed">Criar e gerir pasta Inbox automaticamente</Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    id="inbox_mode_existing"
+                    type="radio"
+                    name="inbox_folder_mode"
+                    checked={formData.inbox_folder_mode === 'existing'}
+                    onChange={() => setFormData(prev => ({
+                      ...prev,
+                      inbox_folder_mode: 'existing',
+                    }))}
+                    className="h-4 w-4 border-input text-primary focus:ring-primary"
+                  />
+                  <Label htmlFor="inbox_mode_existing">Usar uma pasta existente do Google Drive</Label>
+                </div>
               </div>
+
+              {formData.inbox_folder_mode === 'managed' ? (
+                <div className="p-3 bg-muted rounded-md text-sm text-muted-foreground border border-border">
+                  <p>
+                    A pasta <strong>Inbox</strong> será criada e mantida automaticamente dentro da sua pasta principal do Google Drive:
+                  </p>
+                  <div className="mt-2 flex items-center gap-2 font-medium text-foreground">
+                    <FolderInput className="h-4 w-4" />
+                    <span>{formData.drive_folder_name || 'Pasta Principal'} / Inbox</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    Selecione a pasta existente para monitorizar PDFs enviados manualmente.
+                  </p>
+                  <DriveFolderSelector
+                    currentFolderId={formData.inbox_folder_id}
+                    currentFolderName={formData.inbox_folder_name}
+                    onSelect={(id, name) => setFormData(prev => ({
+                      ...prev,
+                      inbox_folder_id: id,
+                      inbox_folder_name: name,
+                    }))}
+                  />
+                </div>
+              )}
             </div>
           )}
         </div>

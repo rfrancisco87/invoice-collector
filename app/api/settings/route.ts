@@ -66,6 +66,7 @@ export async function PATCH(request: Request) {
       inbox_folder_id,
       inbox_folder_name,
       inbox_folder_enabled,
+      inbox_folder_mode,
       webhook_url,
     } = body
 
@@ -95,6 +96,30 @@ export async function PATCH(request: Request) {
     if (inbox_folder_id !== undefined) updates.inbox_folder_id = inbox_folder_id
     if (inbox_folder_name !== undefined) updates.inbox_folder_name = inbox_folder_name
     if (inbox_folder_enabled !== undefined) updates.inbox_folder_enabled = inbox_folder_enabled
+    const effectiveInboxMode: 'managed' | 'existing' =
+      inbox_folder_mode === 'existing' ||
+        (inbox_folder_mode === undefined && currentSettings?.inbox_folder_name && currentSettings.inbox_folder_name !== 'Inbox')
+        ? 'existing'
+        : 'managed'
+    updates.inbox_folder_mode = effectiveInboxMode
+
+    if (effectiveInboxMode === 'existing' && inbox_folder_mode !== undefined) {
+      if (!inbox_folder_name) {
+        updates.inbox_folder_name = currentSettings?.inbox_folder_name || 'Inbox'
+      }
+    }
+
+    if (
+      inbox_folder_enabled === true &&
+      effectiveInboxMode === 'existing' &&
+      !(inbox_folder_id || currentSettings?.inbox_folder_id)
+    ) {
+      return NextResponse.json(
+        { error: 'Selecione uma pasta existente para a Inbox.' },
+        { status: 400 }
+      )
+    }
+
     if (subscription_tier !== undefined) {
       updates.subscription_tier = subscription_tier
       // Automatically set sync frequency based on subscription tier
@@ -142,31 +167,32 @@ export async function PATCH(request: Request) {
 
           // Handle Inbox Folder Logic
           if (inbox_folder_enabled === false && currentSettings?.inbox_folder_id) {
-            // User is disabling inbox, and we have an ID -> Delete it
-            try {
-              await deleteDriveFolder(tokenResult.accessToken, currentSettings.inbox_folder_id)
-              // Clear from updates
-              updates.inbox_folder_id = null
-              updates.inbox_folder_name = null
-            } catch (delErr) {
-              console.error('Failed to delete inbox folder:', delErr)
-              // Proceed with updates anyway, maybe invalid ID
-              updates.inbox_folder_id = null
-              updates.inbox_folder_name = null
+            const currentInboxIsManaged = currentSettings?.inbox_folder_name === 'Inbox'
+
+            // Only auto-delete folders that were app-managed.
+            if (currentInboxIsManaged) {
+              try {
+                await deleteDriveFolder(tokenResult.accessToken, currentSettings.inbox_folder_id)
+              } catch (delErr) {
+                console.error('Failed to delete inbox folder:', delErr)
+              }
             }
+
+            updates.inbox_folder_id = null
+            updates.inbox_folder_name = null
           } else {
             // Ensure structure / Create Inbox if needed
-            // Note: createFolderStructure will create inbox if effectiveInboxEnabled is true
+            // For existing-folder mode, never auto-create Inbox.
             const structure = await createFolderStructure(
               tokenResult.accessToken,
               effectiveDriveId,
-              !!effectiveInboxEnabled
+              !!effectiveInboxEnabled && effectiveInboxMode === 'managed'
             )
 
             // Save subfolder IDs
             updates.pending_folder_id = structure.pendingId
             updates.approved_folder_id = structure.approvedId
-            if (structure.inboxId && effectiveInboxEnabled) {
+            if (structure.inboxId && effectiveInboxEnabled && effectiveInboxMode === 'managed') {
               updates.inbox_folder_id = structure.inboxId
               updates.inbox_folder_name = 'Inbox'
             }
@@ -178,11 +204,25 @@ export async function PATCH(request: Request) {
       }
     }
 
-    const { data: settings, error } = await supabase
+    let settingsResult = await supabase
       .from('user_settings')
       .upsert({ user_id: user.id, ...updates }, { onConflict: 'user_id' })
       .select()
       .single()
+
+    // Backward compatibility if DB migration hasn't been applied yet.
+    if (settingsResult.error?.message?.includes('inbox_folder_mode')) {
+      const fallbackUpdates = { ...updates }
+      delete (fallbackUpdates as any).inbox_folder_mode
+
+      settingsResult = await supabase
+        .from('user_settings')
+        .upsert({ user_id: user.id, ...fallbackUpdates }, { onConflict: 'user_id' })
+        .select()
+        .single()
+    }
+
+    const { data: settings, error } = settingsResult
 
     if (onboarding_completed !== undefined) {
       await supabase
