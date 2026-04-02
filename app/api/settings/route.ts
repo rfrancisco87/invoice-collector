@@ -67,6 +67,9 @@ export async function PATCH(request: Request) {
       inbox_folder_name,
       inbox_folder_enabled,
       inbox_folder_mode,
+      approved_folder_id,
+      approved_folder_name,
+      approved_folder_mode,
       webhook_url,
     } = body
 
@@ -119,6 +122,11 @@ export async function PATCH(request: Request) {
         { status: 400 }
       )
     }
+
+    // Approved folder settings
+    if (approved_folder_mode !== undefined) updates.approved_folder_mode = approved_folder_mode
+    if (approved_folder_name !== undefined) updates.approved_folder_name = approved_folder_name
+    if (approved_folder_id !== undefined) updates.approved_folder_id = approved_folder_id
 
     if (subscription_tier !== undefined) {
       updates.subscription_tier = subscription_tier
@@ -191,7 +199,14 @@ export async function PATCH(request: Request) {
 
             // Save subfolder IDs
             updates.pending_folder_id = structure.pendingId
-            updates.approved_folder_id = structure.approvedId
+
+            // Only use auto-created approved folder if mode is managed
+            const effectiveApprovedMode = approved_folder_mode ?? currentSettings?.approved_folder_mode ?? 'managed'
+            if (effectiveApprovedMode !== 'existing') {
+              updates.approved_folder_id = structure.approvedId
+              updates.approved_folder_name = null
+              updates.approved_folder_mode = 'managed'
+            }
             if (structure.inboxId && effectiveInboxEnabled && effectiveInboxMode === 'managed') {
               updates.inbox_folder_id = structure.inboxId
               updates.inbox_folder_name = 'Inbox'

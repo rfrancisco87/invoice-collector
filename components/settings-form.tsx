@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Bell, Mail, Clock, Check, Tag, Archive, AlertCircle, HardDrive, FolderInput } from 'lucide-react'
+import { Bell, Mail, Clock, Check, Tag, Archive, AlertCircle, HardDrive, FolderInput, FolderCheck } from 'lucide-react'
 import Link from 'next/link'
 import { DriveFolderSelector } from './drive-folder-selector'
 import {
@@ -33,6 +33,9 @@ interface Settings {
   inbox_folder_name?: string | null
   inbox_folder_enabled?: boolean
   inbox_folder_mode?: 'managed' | 'existing' | null
+  approved_folder_id?: string | null
+  approved_folder_name?: string | null
+  approved_folder_mode?: 'managed' | 'existing' | null
   webhook_url?: string | null
 }
 
@@ -51,6 +54,11 @@ export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormPr
       ? 'existing'
       : 'managed'
 
+  const initialApprovedMode: 'managed' | 'existing' =
+    settings?.approved_folder_mode === 'existing'
+      ? 'existing'
+      : 'managed'
+
   const [formData, setFormData] = useState({
     sync_days_back: settings?.sync_days_back || 1,
     auto_sync_enabled: settings?.auto_sync_enabled ?? true,
@@ -66,6 +74,9 @@ export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormPr
     inbox_folder_name: settings?.inbox_folder_name || null,
     inbox_folder_enabled: settings?.inbox_folder_enabled ?? false,
     inbox_folder_mode: settings?.inbox_folder_mode || initialInboxMode,
+    approved_folder_id: settings?.approved_folder_id || null,
+    approved_folder_name: settings?.approved_folder_name || null,
+    approved_folder_mode: settings?.approved_folder_mode || initialApprovedMode,
     webhook_url: settings?.webhook_url || '',
   })
   const [isSaving, setIsSaving] = useState(false)
@@ -92,6 +103,14 @@ export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormPr
       !formData.inbox_folder_id
     ) {
       setMessage({ type: 'error', text: 'Selecione uma pasta existente para a Inbox.' })
+      return
+    }
+
+    if (
+      formData.approved_folder_mode === 'existing' &&
+      !formData.approved_folder_id
+    ) {
+      setMessage({ type: 'error', text: 'Selecione uma pasta existente para os ficheiros aprovados.' })
       return
     }
 
@@ -258,6 +277,72 @@ export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormPr
               drive_folder_path: path
             }))}
           />
+
+          {/* Approved Folder Option */}
+          <div className="pt-4 border-t border-border space-y-4">
+            <div className="flex items-center gap-3">
+              <FolderCheck className="h-5 w-5 text-primary" />
+              <h3 className="text-sm font-semibold text-foreground">Pasta de Ficheiros Aprovados</h3>
+            </div>
+
+            <div className="space-y-3 ml-8">
+              <div className="flex items-center gap-2">
+                <input
+                  id="approved_mode_managed"
+                  type="radio"
+                  name="approved_folder_mode"
+                  checked={formData.approved_folder_mode === 'managed'}
+                  onChange={() => setFormData(prev => ({
+                    ...prev,
+                    approved_folder_mode: 'managed',
+                  }))}
+                  className="h-4 w-4 border-input text-primary focus:ring-primary"
+                />
+                <Label htmlFor="approved_mode_managed">Criar automaticamente dentro da pasta principal</Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  id="approved_mode_existing"
+                  type="radio"
+                  name="approved_folder_mode"
+                  checked={formData.approved_folder_mode === 'existing'}
+                  onChange={() => setFormData(prev => ({
+                    ...prev,
+                    approved_folder_mode: 'existing',
+                  }))}
+                  className="h-4 w-4 border-input text-primary focus:ring-primary"
+                />
+                <Label htmlFor="approved_mode_existing">Usar uma pasta existente do Google Drive</Label>
+              </div>
+
+              {formData.approved_folder_mode === 'managed' ? (
+                <div className="p-3 bg-muted rounded-md text-sm text-muted-foreground border border-border">
+                  <p>
+                    A pasta <strong>Approved</strong> será criada e mantida automaticamente dentro da sua pasta principal:
+                  </p>
+                  <div className="mt-2 flex items-center gap-2 font-medium text-foreground">
+                    <FolderCheck className="h-4 w-4" />
+                    <span>{formData.drive_folder_name || 'Pasta Principal'} / Approved</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    Selecione a pasta onde os ficheiros aprovados serão movidos.
+                  </p>
+                  <DriveFolderSelector
+                    currentFolderId={formData.approved_folder_id}
+                    currentFolderName={formData.approved_folder_name}
+                    onSelect={(id, name) => setFormData(prev => ({
+                      ...prev,
+                      approved_folder_id: id,
+                      approved_folder_name: name,
+                    }))}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
