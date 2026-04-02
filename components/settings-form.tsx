@@ -309,6 +309,8 @@ export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormPr
                   onChange={() => setFormData(prev => ({
                     ...prev,
                     approved_folder_mode: 'existing',
+                    approved_folder_id: null,
+                    approved_folder_name: null,
                   }))}
                   className="h-4 w-4 border-input text-primary focus:ring-primary"
                 />
