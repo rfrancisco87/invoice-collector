@@ -47,11 +47,11 @@ export async function middleware(request: NextRequest) {
   const isPublicRoute = publicRoutes.includes(pathname)
   const isPublicApiRoute = publicApiRoutes.includes(pathname)
   const isApiRoute = pathname.startsWith('/api')
-  const isProtectedApiRoute =
-    isApiRoute &&
-    !isPublicApiRoute &&
-    !pathname.startsWith('/api/inbound-email') &&
-    !pathname.startsWith('/api/cron/sync')
+  // Routes that handle their own authentication (Bearer token, API key, etc.)
+  const isSelfAuthApiRoute =
+    pathname.startsWith('/api/inbound-email') ||
+    pathname.startsWith('/api/cron/sync')
+  const isProtectedApiRoute = isApiRoute && !isPublicApiRoute && !isSelfAuthApiRoute
 
   const user = await getUserFromRequest(request)
 
@@ -59,7 +59,7 @@ export async function middleware(request: NextRequest) {
     return addSecurityHeaders(NextResponse.redirect(new URL('/dashboard', request.url)))
   }
 
-  if (!user && !isPublicRoute && !isPublicApiRoute) {
+  if (!user && !isPublicRoute && !isPublicApiRoute && !isSelfAuthApiRoute) {
     if (isProtectedApiRoute) {
       return addSecurityHeaders(
         NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
