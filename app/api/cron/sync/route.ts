@@ -66,7 +66,10 @@ async function runCronSync(startTime: number) {
 
       const lastSync = new Date(settings.last_auto_sync_at)
       const minutesSinceLastSync = (now.getTime() - lastSync.getTime()) / (1000 * 60)
-      const syncFrequency = settings.sync_frequency_minutes || 720 // Default to 12 hours
+      // Derive frequency from subscription_tier (source of truth), fall back to sync_frequency_minutes
+      const syncFrequency = settings.subscription_tier === 'paid'
+        ? 15
+        : (settings.sync_frequency_minutes || 720)
 
       return minutesSinceLastSync >= syncFrequency
     })
