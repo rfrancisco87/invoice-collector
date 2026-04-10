@@ -2,6 +2,10 @@ import { NextResponse } from 'next/server'
 import { requireApiUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { getDriveClient } from '@/lib/google-drive'
+import {
+  DEFAULT_APPROVED_FILENAME_TEMPLATE,
+  renderApprovedFilename,
+} from '@/lib/filename-template'
 import { Database } from '@/types/database'
 
 export async function POST(request: Request) {
@@ -138,6 +142,10 @@ export async function POST(request: Request) {
       // wrong for files synced from the inbox folder (their parent is the
       // "Pending Approval" folder, not 'root'). On Workspace accounts that
       // permitted multi-parent files, this left the file in two places.
+      //
+      // We also rename the file at the same time using the user's filename
+      // template, so the move + rename happen in a single Drive API call.
+      let finalFilename: string | null = null
       // @ts-ignore
       if (document.drive_file_id) {
         // @ts-ignore
@@ -149,25 +157,46 @@ export async function POST(request: Request) {
         const currentParents = (fileMeta.data.parents || []).join(',')
 
         // @ts-ignore
-        await drive.files.update({
+        const template = settings.approved_filename_template || DEFAULT_APPROVED_FILENAME_TEMPLATE
+        const renamed = renderApprovedFilename(
+          template,
+          // @ts-ignore - document is the row we just fetched
+          document,
+          // @ts-ignore
+          document.filename,
+        )
+
+        const updateBody: any = {
           // @ts-ignore
           fileId: document.drive_file_id,
           addParents: monthFolderId,
           removeParents: currentParents,
-          fields: 'id, parents',
-        })
+          fields: 'id, parents, name',
+        }
+        // @ts-ignore
+        if (renamed && renamed !== document.filename) {
+          updateBody.requestBody = { name: renamed }
+          finalFilename = renamed
+        }
+
+        // @ts-ignore
+        await drive.files.update(updateBody)
       }
 
       // Update document status
+      const documentUpdate: any = {
+        status: 'approved' as const,
+        approved_at: new Date().toISOString(),
+        drive_folder_path: approvedFolderName,
+      }
+      if (finalFilename) {
+        documentUpdate.filename = finalFilename
+      }
       // @ts-ignore
       await supabase
         .from('documents')
         // @ts-ignore
-        .update({
-          status: 'approved' as const,
-          approved_at: new Date().toISOString(),
-          drive_folder_path: approvedFolderName,
-        })
+        .update(documentUpdate)
         .eq('id', documentId)
 
       // Record feedback

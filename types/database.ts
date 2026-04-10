@@ -168,6 +168,7 @@ export interface Database {
           approved_folder_id: string | null
           approved_folder_name: string | null
           approved_folder_mode: 'managed' | 'existing' | null
+          approved_filename_template: string | null
           last_inbox_sync_at: string | null
           sync_days_back: number
           auto_sync_enabled: boolean
@@ -198,6 +199,7 @@ export interface Database {
           approved_folder_id?: string | null
           approved_folder_name?: string | null
           approved_folder_mode?: 'managed' | 'existing' | null
+          approved_filename_template?: string | null
           last_inbox_sync_at?: string | null
           sync_days_back?: number
           auto_sync_enabled?: boolean
@@ -228,6 +230,7 @@ export interface Database {
           approved_folder_id?: string | null
           approved_folder_name?: string | null
           approved_folder_mode?: 'managed' | 'existing' | null
+          approved_filename_template?: string | null
           last_inbox_sync_at?: string | null
           sync_days_back?: number
           auto_sync_enabled?: boolean

@@ -4,9 +4,14 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Bell, Mail, Clock, Check, Tag, Archive, AlertCircle, HardDrive, FolderInput, FolderCheck } from 'lucide-react'
+import { Bell, Mail, Clock, Check, Tag, Archive, AlertCircle, HardDrive, FolderInput, FolderCheck, FileText } from 'lucide-react'
 import Link from 'next/link'
 import { DriveFolderSelector } from './drive-folder-selector'
+import {
+  APPROVED_FILENAME_VARIABLES,
+  DEFAULT_APPROVED_FILENAME_TEMPLATE,
+  applyTemplate,
+} from '@/lib/filename-template'
 import {
   Dialog,
   DialogContent,
@@ -36,6 +41,7 @@ interface Settings {
   approved_folder_id?: string | null
   approved_folder_name?: string | null
   approved_folder_mode?: 'managed' | 'existing' | null
+  approved_filename_template?: string | null
   webhook_url?: string | null
 }
 
@@ -77,6 +83,8 @@ export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormPr
     approved_folder_id: settings?.approved_folder_id || null,
     approved_folder_name: settings?.approved_folder_name || null,
     approved_folder_mode: settings?.approved_folder_mode || initialApprovedMode,
+    approved_filename_template:
+      settings?.approved_filename_template || DEFAULT_APPROVED_FILENAME_TEMPLATE,
     webhook_url: settings?.webhook_url || '',
   })
   const [isSaving, setIsSaving] = useState(false)
@@ -343,6 +351,78 @@ export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormPr
                   />
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* Approved Filename Template */}
+          <div className="pt-4 border-t border-border space-y-4">
+            <div className="flex items-center gap-3">
+              <FileText className="h-5 w-5 text-primary" />
+              <h3 className="text-sm font-semibold text-foreground">Renomear Ficheiros Aprovados</h3>
+            </div>
+
+            <div className="ml-8 space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Modelo aplicado ao nome do ficheiro quando uma fatura é aprovada.
+                Pode usar variáveis entre chavetas. Variáveis sem valor são omitidas
+                juntamente com o separador anterior.
+              </p>
+
+              <div className="space-y-2">
+                <Label htmlFor="approved_filename_template">Modelo</Label>
+                <Input
+                  id="approved_filename_template"
+                  type="text"
+                  value={formData.approved_filename_template ?? ''}
+                  placeholder={DEFAULT_APPROVED_FILENAME_TEMPLATE}
+                  onChange={(e) => setFormData(prev => ({
+                    ...prev,
+                    approved_filename_template: e.target.value,
+                  }))}
+                />
+                <div className="flex flex-wrap gap-1.5">
+                  {APPROVED_FILENAME_VARIABLES.map((v) => {
+                    const token = `{${v}}`
+                    return (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => setFormData(prev => ({
+                          ...prev,
+                          approved_filename_template: (prev.approved_filename_template || '') + token,
+                        }))}
+                        className="rounded border border-border bg-muted px-2 py-0.5 text-xs font-mono text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                      >
+                        {token}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="rounded-md border border-border bg-muted p-3">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">
+                  Pré-visualização
+                </p>
+                <p className="text-sm font-mono text-foreground break-all">
+                  {(() => {
+                    const sample = {
+                      supplier_name: 'ACME Lda',
+                      vat_number: 'PT123456789',
+                      month: '04',
+                      year: '2026',
+                      invoice_number: 'FT 2026/47',
+                      invoice_total: '1250.00',
+                      currency: 'EUR',
+                    }
+                    const rendered = applyTemplate(
+                      formData.approved_filename_template || DEFAULT_APPROVED_FILENAME_TEMPLATE,
+                      sample,
+                    )
+                    return rendered ? `${rendered}.pdf` : '(vazio — será mantido o nome original)'
+                  })()}
+                </p>
+              </div>
             </div>
           </div>
         </div>

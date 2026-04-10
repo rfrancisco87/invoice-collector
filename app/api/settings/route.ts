@@ -70,6 +70,7 @@ export async function PATCH(request: Request) {
       approved_folder_id,
       approved_folder_name,
       approved_folder_mode,
+      approved_filename_template,
       webhook_url,
     } = body
 
@@ -127,6 +128,14 @@ export async function PATCH(request: Request) {
     if (approved_folder_mode !== undefined) updates.approved_folder_mode = approved_folder_mode
     if (approved_folder_name !== undefined) updates.approved_folder_name = approved_folder_name
     if (approved_folder_id !== undefined) updates.approved_folder_id = approved_folder_id
+
+    // Approved filename template
+    if (approved_filename_template !== undefined) {
+      const trimmed = typeof approved_filename_template === 'string'
+        ? approved_filename_template.trim()
+        : null
+      updates.approved_filename_template = trimmed ? trimmed : null
+    }
 
     if (subscription_tier !== undefined) {
       updates.subscription_tier = subscription_tier
