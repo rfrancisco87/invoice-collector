@@ -254,6 +254,9 @@ async function runCronSync(startTime: number) {
                 } else {
                   // Skip documents that are not invoices or credit notes (e.g., bank statements)
                   console.log(`[Cron Sync] Skipping document type "${response.document_type}" - not an invoice or credit note`)
+                  if (fileResponse.data.id) {
+                    await drive.files.delete({ fileId: fileResponse.data.id })
+                  }
                   continue
                 }
               } catch (error) {
@@ -266,6 +269,9 @@ async function runCronSync(startTime: number) {
             if (!webhookData && effectiveWebhookUrl) {
               // Webhook was configured but failed - skip this document
               console.log(`[Cron Sync] Skipping document - webhook failed and cannot classify`)
+              if (fileResponse.data.id) {
+                await drive.files.delete({ fileId: fileResponse.data.id })
+              }
               continue
             }
 
