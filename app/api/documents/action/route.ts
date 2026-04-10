@@ -72,31 +72,46 @@ export async function POST(request: Request) {
       // @ts-ignore
       const date = new Date(document.received_date)
       const monthYear = `${String(date.getMonth() + 1).padStart(2, '0')}-${date.getFullYear()}`
-      const approvedFolderName = `Approved/${monthYear}`
 
-      // Find or create Approved folder
+      // Resolve the parent of the MM-YYYY subfolder.
+      // If the user picked an existing approved folder, place MM-YYYY inside it.
+      // Otherwise create/reuse an "Approved" folder under their main Drive folder.
+      let approvedParentId: string
+      let approvedParentName: string
+
       // @ts-ignore
-      let approvedParentResponse = await drive.files.list({
+      if (settings.approved_folder_mode === 'existing' && settings.approved_folder_id) {
         // @ts-ignore
-        q: `name='Approved' and '${settings.drive_folder_id}' in parents and trashed=false`,
-        fields: 'files(id)',
-      })
-
-      let approvedParentId = approvedParentResponse.data.files?.[0]?.id
-
-      if (!approvedParentId) {
+        approvedParentId = settings.approved_folder_id
         // @ts-ignore
-        const createApproved = await drive.files.create({
-          requestBody: {
-            name: 'Approved',
-            mimeType: 'application/vnd.google-apps.folder',
-            // @ts-ignore
-            parents: [settings.drive_folder_id],
-          },
-          fields: 'id',
+        approvedParentName = settings.approved_folder_name || 'Approved'
+      } else {
+        // @ts-ignore
+        const approvedParentResponse = await drive.files.list({
+          // @ts-ignore
+          q: `name='Approved' and '${settings.drive_folder_id}' in parents and trashed=false`,
+          fields: 'files(id)',
         })
-        approvedParentId = createApproved.data.id!
+
+        let resolvedId = approvedParentResponse.data.files?.[0]?.id
+        if (!resolvedId) {
+          // @ts-ignore
+          const createApproved = await drive.files.create({
+            requestBody: {
+              name: 'Approved',
+              mimeType: 'application/vnd.google-apps.folder',
+              // @ts-ignore
+              parents: [settings.drive_folder_id],
+            },
+            fields: 'id',
+          })
+          resolvedId = createApproved.data.id!
+        }
+        approvedParentId = resolvedId
+        approvedParentName = 'Approved'
       }
+
+      const approvedFolderName = `${approvedParentName}/${monthYear}`
 
       // Find or create month folder
       let monthFolderResponse = await drive.files.list({
@@ -118,15 +133,27 @@ export async function POST(request: Request) {
         monthFolderId = createMonth.data.id!
       }
 
-      // Move file
+      // Move file: resolve the file's actual current parents and remove them.
+      // The previous implementation hardcoded `removeParents: 'root'`, which is
+      // wrong for files synced from the inbox folder (their parent is the
+      // "Pending Approval" folder, not 'root'). On Workspace accounts that
+      // permitted multi-parent files, this left the file in two places.
       // @ts-ignore
       if (document.drive_file_id) {
+        // @ts-ignore
+        const fileMeta = await drive.files.get({
+          // @ts-ignore
+          fileId: document.drive_file_id,
+          fields: 'parents',
+        })
+        const currentParents = (fileMeta.data.parents || []).join(',')
+
         // @ts-ignore
         await drive.files.update({
           // @ts-ignore
           fileId: document.drive_file_id,
           addParents: monthFolderId,
-          removeParents: 'root',
+          removeParents: currentParents,
           fields: 'id, parents',
         })
       }
@@ -193,22 +220,30 @@ export async function POST(request: Request) {
       })
     }
 
-    // Cleanup: If the document came from the inbox folder, remove the original file
+    // Cleanup: If the document came from the inbox folder, remove the original file.
+    // We always attempt this when inbox_file_id is set — the previous guard on
+    // settings.inbox_folder_id silently skipped cleanup if the user later disabled
+    // or unlinked the inbox folder, leaving orphaned files behind.
     // @ts-ignore
     if (document.source === 'inbox_folder' && document.inbox_file_id) {
-      // Find inbox folder setting to confirm we should delete
-      // (Optional check, but good for safety)
-      if (settings.inbox_folder_id) {
-        try {
+      try {
+        // @ts-ignore
+        await drive.files.delete({
           // @ts-ignore
-          await drive.files.delete({
-            // @ts-ignore
-            fileId: document.inbox_file_id
-          })
-          console.log(`[Action] Cleaned up original inbox file ${document.inbox_file_id}`)
-        } catch (cleanupError) {
+          fileId: document.inbox_file_id,
+        })
+        // @ts-ignore
+        console.log(`[Action] Cleaned up original inbox file ${document.inbox_file_id}`)
+      } catch (cleanupError: any) {
+        // 404 means the file was already removed (e.g. by sync). Anything else is
+        // a real failure we want visible in logs so we can diagnose permission /
+        // scope issues — don't fail the request since the document is approved.
+        const status = cleanupError?.code ?? cleanupError?.response?.status
+        if (status === 404) {
+          // @ts-ignore
+          console.log(`[Action] Inbox file ${document.inbox_file_id} already gone (404)`)
+        } else {
           console.error('[Action] Failed to clean up inbox file:', cleanupError)
-          // Don't fail the request, just log it
         }
       }
     }
