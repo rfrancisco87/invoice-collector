@@ -21,8 +21,10 @@ import {
   RefreshCw,
   Tag,
   HardDrive,
+  Pencil,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { DocumentEditDialog, type EditableDocument } from '@/components/document-edit-dialog'
 
 interface Document {
   id: string
@@ -41,6 +43,10 @@ interface Document {
   document_type?: string | null
   invoice_number?: string | null
   supplier_name?: string | null
+  supplier_vat_number?: string | null
+  issue_date?: string | null
+  total_without_vat?: number | null
+  total_vat?: number | null
   invoice_total?: number | null
   currency?: string | null
   is_demo?: boolean
@@ -56,6 +62,7 @@ export function DocumentList({ documents }: DocumentListProps) {
   const [processingId, setProcessingId] = useState<string | null>(null)
   const [reclassifyingId, setReclassifyingId] = useState<string | null>(null)
   const [reprocessingId, setReprocessingId] = useState<string | null>(null)
+  const [editingDoc, setEditingDoc] = useState<EditableDocument | null>(null)
 
   const handleAction = async (documentId: string, action: 'approve' | 'reject') => {
     try {
@@ -206,7 +213,7 @@ export function DocumentList({ documents }: DocumentListProps) {
           <div className="flex-shrink-0">
             <span className="text-xs font-medium text-muted-foreground">Estado</span>
           </div>
-          <div className="flex-shrink-0 w-36 text-right ml-auto">
+          <div className="flex-shrink-0 w-44 text-right ml-auto">
             <span className="text-xs font-medium text-muted-foreground">Ações</span>
           </div>
         </div>
@@ -308,7 +315,7 @@ export function DocumentList({ documents }: DocumentListProps) {
                 </div>
 
                 {/* Actions */}
-                <div className="flex-shrink-0 w-36 flex items-center justify-end gap-1 ml-auto">
+                <div className="flex-shrink-0 w-44 flex items-center justify-end gap-1 ml-auto">
                   <TooltipProvider delayDuration={300}>
                     {isReclassifying ? (
                       <div className="flex items-center gap-1">
@@ -413,6 +420,21 @@ export function DocumentList({ documents }: DocumentListProps) {
                           <TooltipContent>Reclassificar</TooltipContent>
                         </Tooltip>
 
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              onClick={() => setEditingDoc(doc)}
+                              disabled={isProcessing || isReprocessing}
+                              variant="outline"
+                              size="sm"
+                              className="h-8 w-8 p-0"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Editar dados</TooltipContent>
+                        </Tooltip>
+
                         {doc.webhook_error && (
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -438,6 +460,12 @@ export function DocumentList({ documents }: DocumentListProps) {
           )
         })}
       </div>
+
+      <DocumentEditDialog
+        document={editingDoc}
+        open={!!editingDoc}
+        onOpenChange={(open) => { if (!open) setEditingDoc(null) }}
+      />
     </div>
   )
 }
