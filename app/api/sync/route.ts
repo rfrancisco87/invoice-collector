@@ -294,7 +294,7 @@ export async function POST(request: Request) {
                   {
                     emailMessageId: `drive_inbox_${doc.driveFileId}`, // unique fake ID
                     subject: `File from Inbox: ${doc.filename}`,
-                    sender: 'Drive Upload',
+                    sender: 'Inbox folder',
                     senderDomain: 'drive.google.com',
                     receivedDate: doc.createdDate,
                     source: 'inbox_folder',

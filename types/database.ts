@@ -182,6 +182,8 @@ export interface Database {
           enabled_sources?: string[]
           subscription_tier: 'free' | 'paid'
           sync_frequency_minutes: number
+          auto_reject_enabled: boolean
+          auto_approve_enabled: boolean
           created_at: string
           updated_at: string
         }
@@ -213,6 +215,8 @@ export interface Database {
           enabled_sources?: string[]
           subscription_tier?: 'free' | 'paid'
           sync_frequency_minutes?: number
+          auto_reject_enabled?: boolean
+          auto_approve_enabled?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -244,6 +248,8 @@ export interface Database {
           enabled_sources?: string[]
           subscription_tier?: 'free' | 'paid'
           sync_frequency_minutes?: number
+          auto_reject_enabled?: boolean
+          auto_approve_enabled?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -273,6 +279,7 @@ export interface Database {
           processed_at: string
           approved_at: string | null
           rejected_at: string | null
+          auto_action_reason: string | null
           invoice_number: string | null
           issue_date: string | null
           supplier_name: string | null
@@ -311,6 +318,7 @@ export interface Database {
           processed_at?: string
           approved_at?: string | null
           rejected_at?: string | null
+          auto_action_reason?: string | null
           invoice_number?: string | null
           issue_date?: string | null
           supplier_name?: string | null
@@ -349,6 +357,7 @@ export interface Database {
           processed_at?: string
           approved_at?: string | null
           rejected_at?: string | null
+          auto_action_reason?: string | null
           invoice_number?: string | null
           issue_date?: string | null
           supplier_name?: string | null

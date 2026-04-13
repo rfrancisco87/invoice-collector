@@ -2,12 +2,13 @@ import { createClient } from '@/lib/supabase/server'
 import { calculateFileHash } from '@/lib/gmail'
 import { getDriveClient } from '@/lib/google-drive'
 import { sendPdfToWebhook } from '@/lib/webhook'
+import { checkAutoDecision } from '@/lib/auto-decision'
 import { Readable } from 'stream'
 
 export interface IngestionResult {
     success: boolean
     documentId?: string
-    action: 'processed' | 'duplicate_skipped' | 'duplicate_cleaned' | 'error' | 'skipped_type'
+    action: 'processed' | 'auto_rejected' | 'duplicate_skipped' | 'duplicate_cleaned' | 'error' | 'skipped_type'
     details?: string
     log?: string[]
 }
@@ -58,6 +59,75 @@ export async function ingestDocument(
         if (existingDoc) {
             log.push(`⊘ DUPLICATE - File already exists: ${existingDoc.filename}`)
             return { success: true, action: 'duplicate_skipped', log }
+        }
+
+        // 2b. Auto-decision (learning from prior feedback)
+        //
+        // We check BEFORE uploading to Drive / calling the webhook so that
+        // blocked senders and known-rejected files don't waste those quotas.
+        // Only the 'reject' branch is acted on here — auto-approve requires
+        // the webhook extraction data and the approved-folder flow, which is
+        // deferred to a follow-up (the setting flag exists, the action does not).
+        const autoDecision = await checkAutoDecision(supabase, {
+            userId: user.id,
+            fileHash,
+            senderDomain: metadata.senderDomain,
+            settings: {
+                auto_reject_enabled: settings.auto_reject_enabled,
+                auto_approve_enabled: settings.auto_approve_enabled,
+            },
+        })
+
+        if (autoDecision?.action === 'reject') {
+            log.push(`🤖 AUTO-REJECT - ${autoDecision.description}`)
+
+            const autoRejectPayload: any = {
+                user_id: user.id,
+                email_message_id: metadata.emailMessageId,
+                file_hash: fileHash,
+                subject: metadata.subject,
+                sender: metadata.sender,
+                sender_domain: metadata.senderDomain,
+                received_date: metadata.receivedDate.toISOString(),
+                filename,
+                // We never ran the classifier — leave it unclassified. The
+                // extracted fields stay null. If the user restores the doc,
+                // they can re-run the webhook from the UI (webhook_error path).
+                original_classification: 'unclassified',
+                final_classification: 'unclassified',
+                confidence_score: 0,
+                status: 'rejected',
+                rejected_at: new Date().toISOString(),
+                auto_action_reason: autoDecision.reason,
+                source: metadata.source,
+                inbox_file_id: metadata.inboxFileId,
+            }
+            if (gmailAccount?.id) autoRejectPayload.gmail_account_id = gmailAccount.id
+
+            const { data: doc, error: insertError } = await supabase
+                .from('documents')
+                .insert(autoRejectPayload)
+                .select()
+                .single()
+            if (insertError) throw new Error(insertError.message)
+
+            // Clean up the inbox-folder original if this doc came from there.
+            // There is no Drive file in the pending folder to delete because we
+            // skipped the upload entirely.
+            if (metadata.source === 'inbox_folder' && metadata.inboxFileId) {
+                try {
+                    const drive = await getDriveClient(providerToken)
+                    await drive.files.delete({ fileId: metadata.inboxFileId })
+                } catch (err: any) {
+                    const status = err?.code ?? err?.response?.status
+                    if (status !== 404) {
+                        log.push(`⚠ Inbox cleanup failed: ${err?.message || err}`)
+                    }
+                }
+            }
+
+            // @ts-ignore - Supabase row types infer as never across this project
+            return { success: true, action: 'auto_rejected', documentId: doc.id, log }
         }
 
         // 3. Upload to Drive

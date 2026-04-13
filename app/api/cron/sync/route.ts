@@ -500,7 +500,7 @@ async function runCronSync(startTime: number) {
                     email_message_id: `drive_inbox_${doc.driveFileId}`,
                     file_hash: doc.fileHash,
                     subject: `File from Inbox: ${doc.filename}`,
-                    sender: 'Drive Upload',
+                    sender: 'Inbox folder',
                     sender_domain: 'drive.google.com',
                     received_date: doc.createdDate.toISOString(),
                     filename: doc.filename,
