@@ -176,7 +176,6 @@ export async function scanGmailForInvoices(
     let pageToken: string | undefined = undefined
 
     do {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const response: any = await gmail.users.messages.list({
         userId: 'me',
         q: query,
