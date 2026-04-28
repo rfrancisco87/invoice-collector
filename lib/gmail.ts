@@ -143,35 +143,56 @@ export async function scanGmailForInvoices(
   const gmail = await getGmailClient(accessToken)
   const attachments: EmailAttachment[] = []
 
-  // Calculate date for search
+  // Guard against null/undefined/0 — ensure at least 1 day
+  const safeDaysBack = Math.max(1, Number(daysBack) || 1)
+
+  // Calculate the search boundary as the START of the day (midnight UTC),
+  // with an extra day buffer to cover timezone differences between the
+  // server and Gmail. Duplicate detection (file hash) prevents reprocessing.
   const sinceDate = new Date()
-  sinceDate.setDate(sinceDate.getDate() - daysBack)
-  const afterDate = Math.floor(sinceDate.getTime() / 1000)
+  sinceDate.setDate(sinceDate.getDate() - safeDaysBack - 1)
+  sinceDate.setUTCHours(0, 0, 0, 0)
+
+  // Use YYYY/MM/DD format for the Gmail `after:` operator — this is the
+  // documented format and avoids the ambiguous day-rounding behaviour that
+  // epoch-second values can trigger.
+  const afterDateStr = `${sinceDate.getUTCFullYear()}/${String(sinceDate.getUTCMonth() + 1).padStart(2, '0')}/${String(sinceDate.getUTCDate()).padStart(2, '0')}`
 
   // Search for ALL emails with attachments (we'll filter PDFs later)
-  const query = `has:attachment after:${afterDate}`
+  const query = `has:attachment after:${afterDateStr}`
 
   const debugInfo: ScanDebugInfo = {
     query,
-    daysBack,
-    afterDate: new Date(afterDate * 1000).toISOString(),
+    daysBack: safeDaysBack,
+    afterDate: sinceDate.toISOString(),
     messagesFound: 0,
     messagesWithoutDateFilter: 0,
     pdfAttachmentsFound: 0,
   }
 
   try {
-    const response = await gmail.users.messages.list({
-      userId: 'me',
-      q: query,
-      maxResults: 100,
-    })
+    // Paginate through all matching messages (Gmail returns max 500 per page)
+    const messages: Array<{ id?: string | null; threadId?: string | null }> = []
+    let pageToken: string | undefined = undefined
 
-    const messages = response.data.messages || []
+    do {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const response: any = await gmail.users.messages.list({
+        userId: 'me',
+        q: query,
+        maxResults: 500,
+        pageToken,
+      })
+
+      const pageMessages = response.data.messages || []
+      messages.push(...pageMessages)
+      pageToken = response.data.nextPageToken || undefined
+    } while (pageToken)
+
     debugInfo.messagesFound = messages.length
 
     if (messages.length === 0) {
-      // Try without date filter as fallback
+      // Try without date filter as fallback to check connectivity
       const testResponse = await gmail.users.messages.list({
         userId: 'me',
         q: 'has:attachment',
