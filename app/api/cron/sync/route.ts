@@ -345,7 +345,165 @@ async function runCronSync(startTime: number) {
           }
         }
 
-        // Update sync job status
+        // --- INBOX FOLDER SYNC (before sync job update so counts are accurate) ---
+        if (userSettings.inbox_folder_enabled && userSettings.inbox_folder_id) {
+          try {
+            const lastSyncDate = userSettings.last_inbox_sync_at ? new Date(userSettings.last_inbox_sync_at) : undefined
+
+            const { documents: inboxDocs } = await scanInboxFolder(
+              tokenResult.accessToken,
+              userSettings.inbox_folder_id,
+              lastSyncDate
+            )
+
+            let inboxDocsProcessed = 0
+
+            if (inboxDocs.length > 0) {
+              const drive = await getDriveClient(tokenResult.accessToken)
+
+              const getPendingFolderId = async () => {
+                const foldersResponse = await drive.files.list({
+                  q: `name='Pending Approval' and '${userSettings.drive_folder_id}' in parents and trashed=false`,
+                  fields: 'files(id, name)',
+                })
+                if (foldersResponse.data.files?.[0]?.id) return foldersResponse.data.files[0].id
+
+                const folderResponse = await drive.files.create({
+                  requestBody: {
+                    name: 'Pending Approval',
+                    mimeType: 'application/vnd.google-apps.folder',
+                    parents: [userSettings.drive_folder_id!],
+                  },
+                  fields: 'id',
+                })
+                return folderResponse.data.id!
+              }
+
+              const pendingFolderId = await getPendingFolderId()
+
+              for (const doc of inboxDocs) {
+                try {
+                  // Check duplicates
+                  const { data: existingDoc } = await supabase
+                    .from('documents')
+                    .select('id')
+                    .eq('user_id', userSettings.user_id)
+                    .eq('file_hash', doc.fileHash)
+                    .single()
+
+                  if (existingDoc) {
+                    duplicatesSkipped++
+                    // Clean up duplicate from inbox
+                    try {
+                      await drive.files.delete({ fileId: doc.driveFileId })
+                    } catch { /* ignore cleanup errors */ }
+                    continue
+                  }
+
+                  // Copy to Pending Approval
+                  const copiedFile = await drive.files.copy({
+                    fileId: doc.driveFileId,
+                    requestBody: { name: doc.filename, parents: [pendingFolderId] },
+                    fields: 'id',
+                  })
+                  const driveFileId = copiedFile.data.id!
+
+                  // Webhook & Classification
+                  let webhookData = null
+                  let webhookError = null
+                  let classification: 'invoice' | 'credit_note' | 'unclassified' = 'unclassified'
+
+                  const effectiveWebhookUrl = userSettings.webhook_url?.trim() || process.env.WEBHOOK_URL?.trim()
+
+                  if (effectiveWebhookUrl) {
+                    try {
+                      const response = await sendPdfToWebhook(
+                        doc.data,
+                        doc.filename,
+                        effectiveWebhookUrl
+                      )
+                      webhookData = response
+
+                      if (response.document_type === 'supplier_invoice') {
+                        classification = 'invoice'
+                      } else if (response.document_type === 'credit_note') {
+                        classification = 'credit_note'
+                      } else {
+                        await drive.files.delete({ fileId: driveFileId })
+                        continue
+                      }
+                    } catch (error) {
+                      webhookError = error instanceof Error ? error.message : 'Unknown webhook error'
+                      await drive.files.delete({ fileId: driveFileId })
+                      continue
+                    }
+                  } else {
+                    await drive.files.delete({ fileId: driveFileId })
+                    continue
+                  }
+
+                  // Save to DB
+                  const { data: newDoc, error: insertError } = await supabase.from('documents').insert({
+                    user_id: userSettings.user_id,
+                    gmail_account_id: gmailAccount.id,
+                    email_message_id: `drive_inbox_${doc.driveFileId}`,
+                    file_hash: doc.fileHash,
+                    subject: `File from Inbox: ${doc.filename}`,
+                    sender: 'Inbox folder',
+                    sender_domain: 'drive.google.com',
+                    received_date: doc.createdDate.toISOString(),
+                    filename: doc.filename,
+                    original_classification: classification,
+                    final_classification: classification,
+                    confidence_score: webhookData ? 1.0 : 0.5,
+                    status: 'pending',
+                    drive_file_id: driveFileId,
+                    drive_folder_path: 'Pending Approval',
+                    source: 'inbox_folder',
+                    inbox_file_id: doc.driveFileId,
+                    invoice_number: webhookData?.invoice_number || null,
+                    issue_date: webhookData?.issue_date || null,
+                    supplier_name: webhookData?.supplier_name || null,
+                    supplier_vat_number: webhookData?.supplier_vat_number || null,
+                    total_without_vat: webhookData?.total_without_vat ? parseFloat(webhookData.total_without_vat) : null,
+                    total_vat: webhookData?.total_vat ? parseFloat(webhookData.total_vat) : null,
+                    invoice_total: webhookData?.invoice_total ? parseFloat(webhookData.invoice_total) : null,
+                    currency: webhookData?.currency || null,
+                    numb_pages: webhookData?.numb_pages || null,
+                    document_type: webhookData?.document_type || null,
+                    webhook_processed_at: webhookData ? new Date().toISOString() : null,
+                    webhook_error: webhookError,
+                  }).select().single()
+
+                  if (!insertError && newDoc) {
+                    documentsFound++
+                    inboxDocsProcessed++
+                    newDocuments.push(newDoc)
+
+                    // Clean up original file from inbox (move behaviour)
+                    try {
+                      await drive.files.delete({ fileId: doc.driveFileId })
+                    } catch { /* ignore cleanup errors */ }
+                  }
+
+                } catch (err) {
+                  console.error(`Error processing inbox file for user ${userSettings.user_id}:`, err)
+                }
+              }
+
+              if (inboxDocsProcessed > 0) {
+                await supabase
+                  .from('user_settings')
+                  .update({ last_inbox_sync_at: new Date().toISOString() })
+                  .eq('user_id', userSettings.user_id)
+              }
+            }
+          } catch (inboxErr) {
+            console.error(`Inbox sync failed for user ${userSettings.user_id}:`, inboxErr)
+          }
+        }
+
+        // Update sync job status (now includes both Gmail and inbox folder counts)
         await supabase
           .from('sync_jobs')
           .update({
@@ -393,161 +551,6 @@ async function runCronSync(startTime: number) {
           emailSent: userSettings.email_notifications_enabled && newDocuments.length > 0,
           duration_ms: Date.now() - userStartTime,
         })
-
-        // --- INBOX FOLDER SYNC ---
-        if (userSettings.inbox_folder_enabled && userSettings.inbox_folder_id) {
-          try {
-            const lastSyncDate = userSettings.last_inbox_sync_at ? new Date(userSettings.last_inbox_sync_at) : undefined
-
-            const { documents: inboxDocs } = await scanInboxFolder(
-              tokenResult.accessToken,
-              userSettings.inbox_folder_id,
-              lastSyncDate
-            )
-
-            let inboxDocsProcessed = 0
-
-            if (inboxDocs.length > 0) {
-              const drive = await getDriveClient(tokenResult.accessToken)
-
-              // Ensure Pending Approval folder exists (reuse logic or find again)
-              // We'll quickly find/create it to be safe
-              const getPendingFolderId = async () => {
-                const foldersResponse = await drive.files.list({
-                  q: `name='Pending Approval' and '${userSettings.drive_folder_id}' in parents and trashed=false`,
-                  fields: 'files(id, name)',
-                })
-                if (foldersResponse.data.files?.[0]?.id) return foldersResponse.data.files[0].id
-
-                const folderResponse = await drive.files.create({
-                  requestBody: {
-                    name: 'Pending Approval',
-                    mimeType: 'application/vnd.google-apps.folder',
-                    parents: [userSettings.drive_folder_id!],
-                  },
-                  fields: 'id',
-                })
-                return folderResponse.data.id!
-              }
-
-              const pendingFolderId = await getPendingFolderId()
-
-              // Process inbox documents
-              for (const doc of inboxDocs) {
-                try {
-                  // Check duplicates
-                  const { data: existingDoc } = await supabase
-                    .from('documents')
-                    .select('id')
-                    .eq('user_id', userSettings.user_id)
-                    .eq('file_hash', doc.fileHash)
-                    .single()
-
-                  if (existingDoc) {
-                    duplicatesSkipped++
-                    continue
-                  }
-
-                  // Copy to Pending Approval
-                  const copiedFile = await drive.files.copy({
-                    fileId: doc.driveFileId,
-                    requestBody: { name: doc.filename, parents: [pendingFolderId] },
-                    fields: 'id',
-                  })
-                  const driveFileId = copiedFile.data.id!
-
-                  // Webhook & Classification
-                  let webhookData = null
-                  let webhookError = null
-                  let classification: 'invoice' | 'credit_note' | 'unclassified' = 'unclassified'
-
-                  const effectiveWebhookUrl = userSettings.webhook_url?.trim() || process.env.WEBHOOK_URL?.trim()
-
-                  if (effectiveWebhookUrl) {
-                    try {
-                      const response = await sendPdfToWebhook(
-                        doc.data,
-                        doc.filename,
-                        effectiveWebhookUrl
-                      )
-                      webhookData = response
-
-                      if (response.document_type === 'supplier_invoice') {
-                        classification = 'invoice'
-                      } else if (response.document_type === 'credit_note') {
-                        classification = 'credit_note'
-                      } else {
-                        // Skip if not invoice/credit note
-                        await drive.files.delete({ fileId: driveFileId })
-                        continue
-                      }
-                    } catch (error) {
-                      webhookError = error instanceof Error ? error.message : 'Unknown webhook error'
-                      // If webhook required, skip and cleanup
-                      await drive.files.delete({ fileId: driveFileId })
-                      continue
-                    }
-                  } else {
-                    // No webhook -> skip
-                    await drive.files.delete({ fileId: driveFileId })
-                    continue
-                  }
-
-                  // Save to DB
-                  const { error: insertError } = await supabase.from('documents').insert({
-                    user_id: userSettings.user_id,
-                    gmail_account_id: gmailAccount.id,
-                    email_message_id: `drive_inbox_${doc.driveFileId}`,
-                    file_hash: doc.fileHash,
-                    subject: `File from Inbox: ${doc.filename}`,
-                    sender: 'Inbox folder',
-                    sender_domain: 'drive.google.com',
-                    received_date: doc.createdDate.toISOString(),
-                    filename: doc.filename,
-                    original_classification: classification,
-                    final_classification: classification,
-                    confidence_score: webhookData ? 1.0 : 0.5,
-                    status: 'pending',
-                    drive_file_id: driveFileId,
-                    drive_folder_path: 'Pending Approval',
-                    source: 'inbox_folder',
-                    inbox_file_id: doc.driveFileId,
-                    invoice_number: webhookData?.invoice_number || null,
-                    issue_date: webhookData?.issue_date || null,
-                    supplier_name: webhookData?.supplier_name || null,
-                    supplier_vat_number: webhookData?.supplier_vat_number || null,
-                    total_without_vat: webhookData?.total_without_vat ? parseFloat(webhookData.total_without_vat) : null,
-                    total_vat: webhookData?.total_vat ? parseFloat(webhookData.total_vat) : null,
-                    invoice_total: webhookData?.invoice_total ? parseFloat(webhookData.invoice_total) : null,
-                    currency: webhookData?.currency || null,
-                    numb_pages: webhookData?.numb_pages || null,
-                    document_type: webhookData?.document_type || null,
-                    webhook_processed_at: webhookData ? new Date().toISOString() : null,
-                    webhook_error: webhookError,
-                  })
-
-                  if (!insertError) {
-                    documentsFound++
-                    inboxDocsProcessed++
-                    totalDocumentsFound++ // Update global counter for report
-                  }
-
-                } catch (err) {
-                  console.error(`Error processing inbox file for user ${userSettings.user_id}:`, err)
-                }
-              }
-
-              if (inboxDocsProcessed > 0) {
-                await supabase
-                  .from('user_settings')
-                  .update({ last_inbox_sync_at: new Date().toISOString() })
-                  .eq('user_id', userSettings.user_id)
-              }
-            }
-          } catch (inboxErr) {
-            console.error(`Inbox sync failed for user ${userSettings.user_id}:`, inboxErr)
-          }
-        }
       } catch (error) {
         console.error(`Error syncing user ${userSettings.user_id}:`, error)
         results.push({
