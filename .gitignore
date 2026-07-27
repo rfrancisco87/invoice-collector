@@ -41,7 +41,6 @@
 # Only the Supabase CLI's local state is genuinely disposable:
 supabase/.temp
 supabase/.branches
-supabase/migrations
 # ===================================
 # MISC
 # ===================================
