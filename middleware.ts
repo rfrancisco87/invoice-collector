@@ -43,7 +43,18 @@ export async function middleware(request: NextRequest) {
   }
 
   const publicRoutes = ['/login', '/signup', '/forgot-password', '/reset-password']
-  const publicApiRoutes = ['/api/auth/login', '/api/auth/logout']
+  // Account-creation and recovery endpoints are reachable without a session by
+  // definition. Each authenticates on its own terms: signup requires a valid
+  // invite code, reset-password requires an unexpired single-use token, and
+  // forgot-password returns an identical response for every input so it cannot
+  // be used to enumerate accounts.
+  const publicApiRoutes = [
+    '/api/auth/login',
+    '/api/auth/logout',
+    '/api/auth/signup',
+    '/api/auth/forgot-password',
+    '/api/auth/reset-password',
+  ]
   const isPublicRoute = publicRoutes.includes(pathname)
   const isPublicApiRoute = publicApiRoutes.includes(pathname)
   const isApiRoute = pathname.startsWith('/api')
@@ -67,6 +78,23 @@ export async function middleware(request: NextRequest) {
     }
 
     return redirectToLogin(request, pathname)
+  }
+
+  // Admin surfaces. The /admin layout and page already re-check the role
+  // server-side; gating here too means a new admin route is protected the
+  // moment it exists, rather than the moment someone remembers to add the
+  // check. Signed-in non-admins are bounced to their dashboard so the
+  // existence of the panel isn't advertised.
+  const isAdminRoute = pathname.startsWith('/admin') || pathname.startsWith('/api/admin')
+
+  if (isAdminRoute && user && user.role !== 'admin') {
+    if (isApiRoute) {
+      return addSecurityHeaders(
+        NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      )
+    }
+
+    return addSecurityHeaders(NextResponse.redirect(new URL('/dashboard', request.url)))
   }
 
   if (!user && request.cookies.get('invoice_collector_session')) {

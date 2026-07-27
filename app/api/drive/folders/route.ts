@@ -43,6 +43,7 @@ export async function GET(request: Request) {
           token_expiry: tokenResult.newExpiry,
         })
         .eq('id', gmailAccount.id)
+        .eq('user_id', user.id)
     }
 
     const { searchParams } = new URL(request.url)

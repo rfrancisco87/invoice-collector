@@ -11,6 +11,8 @@ export type DocumentStatus = 'pending' | 'approved' | 'rejected'
 export type SyncStatus = 'running' | 'completed' | 'failed'
 export type FeedbackAction = 'approved' | 'rejected' | 'reclassified'
 export type UserRole = 'user' | 'admin'
+export type ProfileStatus = 'invited' | 'active' | 'suspended'
+export type InviteStatus = 'active' | 'used' | 'revoked' | 'expired'
 export type DocumentSource = 'gmail' | 'inbox_folder'
 
 // Profile type for user management
@@ -20,6 +22,8 @@ export interface Profile {
   full_name: string | null
   avatar_url: string | null
   role: UserRole
+  status?: ProfileStatus
+  invited_by?: string | null
   onboarding_completed?: boolean
   onboarding_step?: number
   demo_invoice_created?: boolean
@@ -70,6 +74,8 @@ export interface Database {
           full_name: string | null
           avatar_url: string | null
           role: UserRole
+          status?: ProfileStatus
+          invited_by?: string | null
           onboarding_completed?: boolean
           onboarding_step?: number
           demo_invoice_created?: boolean
@@ -82,6 +88,8 @@ export interface Database {
           full_name?: string | null
           avatar_url?: string | null
           role?: UserRole
+          status?: ProfileStatus
+          invited_by?: string | null
           onboarding_completed?: boolean
           onboarding_step?: number
           demo_invoice_created?: boolean
@@ -94,6 +102,8 @@ export interface Database {
           full_name?: string | null
           avatar_url?: string | null
           role?: UserRole
+          status?: ProfileStatus
+          invited_by?: string | null
           onboarding_completed?: boolean
           onboarding_step?: number
           demo_invoice_created?: boolean
@@ -119,6 +129,105 @@ export interface Database {
           password_hash?: string
           created_at?: string
           updated_at?: string
+        }
+      }
+      user_api_keys: {
+        Row: {
+          id: string
+          user_id: string
+          provider: 'anthropic' | 'openai'
+          encrypted_key: string
+          key_hint: string
+          status: 'unverified' | 'valid' | 'invalid'
+          last_validated_at: string | null
+          last_error: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          provider: 'anthropic' | 'openai'
+          encrypted_key: string
+          key_hint: string
+          status?: 'unverified' | 'valid' | 'invalid'
+          last_validated_at?: string | null
+          last_error?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          provider?: 'anthropic' | 'openai'
+          encrypted_key?: string
+          key_hint?: string
+          status?: 'unverified' | 'valid' | 'invalid'
+          last_validated_at?: string | null
+          last_error?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      invite_codes: {
+        Row: {
+          id: string
+          code: string
+          email: string | null
+          created_by: string
+          used_by: string | null
+          used_at: string | null
+          expires_at: string
+          revoked_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          code: string
+          email?: string | null
+          created_by: string
+          used_by?: string | null
+          used_at?: string | null
+          expires_at: string
+          revoked_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          code?: string
+          email?: string | null
+          created_by?: string
+          used_by?: string | null
+          used_at?: string | null
+          expires_at?: string
+          revoked_at?: string | null
+          created_at?: string
+        }
+      }
+      password_reset_tokens: {
+        Row: {
+          id: string
+          profile_id: string
+          token_hash: string
+          expires_at: string
+          used_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          profile_id: string
+          token_hash: string
+          expires_at: string
+          used_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          profile_id?: string
+          token_hash?: string
+          expires_at?: string
+          used_at?: string | null
+          created_at?: string
         }
       }
       gmail_accounts: {
@@ -184,6 +293,10 @@ export interface Database {
           sync_frequency_minutes: number
           auto_reject_enabled: boolean
           auto_approve_enabled: boolean
+          classification_confidence_threshold: number
+          duplicate_pair_default: 'ask' | 'invoice' | 'receipt' | 'both'
+          classifier_backend: 'webhook' | 'anthropic' | 'openai'
+          prefilter_enabled: boolean
           created_at: string
           updated_at: string
         }
@@ -217,6 +330,10 @@ export interface Database {
           sync_frequency_minutes?: number
           auto_reject_enabled?: boolean
           auto_approve_enabled?: boolean
+          classification_confidence_threshold?: number
+          duplicate_pair_default?: 'ask' | 'invoice' | 'receipt' | 'both'
+          classifier_backend?: 'webhook' | 'anthropic' | 'openai'
+          prefilter_enabled?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -250,6 +367,10 @@ export interface Database {
           sync_frequency_minutes?: number
           auto_reject_enabled?: boolean
           auto_approve_enabled?: boolean
+          classification_confidence_threshold?: number
+          duplicate_pair_default?: 'ask' | 'invoice' | 'receipt' | 'both'
+          classifier_backend?: 'webhook' | 'anthropic' | 'openai'
+          prefilter_enabled?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -269,6 +390,14 @@ export interface Database {
           original_classification: DocumentClassification
           final_classification: DocumentClassification
           confidence_score: number | null
+          classification_source: string | null
+          variant: string | null
+          pair_state: string
+          paired_with_id: string | null
+          pair_reason: string | null
+          classification_reason: string | null
+          needs_review: boolean
+          prefilter_matched: Json | null
           was_reclassified: boolean
           status: DocumentStatus
           is_demo?: boolean
@@ -308,6 +437,14 @@ export interface Database {
           original_classification: DocumentClassification
           final_classification: DocumentClassification
           confidence_score?: number | null
+          classification_source?: string | null
+          variant?: string | null
+          pair_state?: string
+          paired_with_id?: string | null
+          pair_reason?: string | null
+          classification_reason?: string | null
+          needs_review?: boolean
+          prefilter_matched?: Json | null
           was_reclassified?: boolean
           status?: DocumentStatus
           is_demo?: boolean
@@ -347,6 +484,14 @@ export interface Database {
           original_classification?: DocumentClassification
           final_classification?: DocumentClassification
           confidence_score?: number | null
+          classification_source?: string | null
+          variant?: string | null
+          pair_state?: string
+          paired_with_id?: string | null
+          pair_reason?: string | null
+          classification_reason?: string | null
+          needs_review?: boolean
+          prefilter_matched?: Json | null
           was_reclassified?: boolean
           status?: DocumentStatus
           is_demo?: boolean

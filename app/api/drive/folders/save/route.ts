@@ -56,6 +56,7 @@ export async function POST(request: Request) {
           token_expiry: tokenResult.newExpiry,
         })
         .eq('id', gmailAccount.id)
+        .eq('user_id', user.id)
     }
 
     // Create subfolder structure

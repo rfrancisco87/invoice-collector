@@ -1,15 +1,11 @@
 
-const { createClient } = require('@supabase/supabase-js');
+const { adminClient } = require('./_supabase');
 
-// Config from .env.local (Swapped keys noted: ANON_KEY contains service_role)
-const SUPABASE_URL = 'https://dygkgeqizcgxqzljqphr.supabase.co';
-// Using the key that has "service_role" in it (from NEXT_PUBLIC_SUPABASE_ANON_KEY in env)
-const SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR5Z2tnZXFpemNneHF6bGpxcGhyIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2ODMzMDA4NSwiZXhwIjoyMDgzOTA2MDg1fQ.qjeEMWzTGsFx5_e4aMMIGkQLY8RRaVipx5AyNVAh27k';
 const WEBHOOK_URL = 'http://localhost:3000/api/inbound-email';
 
 async function main() {
     console.log('1. Connecting to Supabase...');
-    const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
+    const supabase = adminClient();
 
     console.log('2. Fetching user settings...');
     const { data: settings, error } = await supabase

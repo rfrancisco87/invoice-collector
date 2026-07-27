@@ -1,9 +1,5 @@
 
-const { createClient } = require('@supabase/supabase-js');
-
-// Config from .env.local
-const SUPABASE_URL = 'https://dygkgeqizcgxqzljqphr.supabase.co';
-const SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR5Z2tnZXFpemNneHF6bGpxcGhyIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2ODMzMDA4NSwiZXhwIjoyMDgzOTA2MDg1fQ.qjeEMWzTGsFx5_e4aMMIGkQLY8RRaVipx5AyNVAh27k';
+const { adminClient } = require('./_supabase');
 
 async function main() {
     // Note: We cannot query information_schema easily via supabase-js client on public schema usually, 
@@ -12,7 +8,7 @@ async function main() {
 
     // Actually, let's try to query the migration table or just test the Insert directly.
 
-    const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
+    const supabase = adminClient();
 
     // Try to insert a dummy record that violates potential NOT NULL constraint on gmail_account_id
     // We'll use a fake user_id (Service key allows it if we bypass RLS or simply use a valid user if we have one)

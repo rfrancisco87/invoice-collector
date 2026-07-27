@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, Suspense } from 'react'
+import Link from 'next/link'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -119,9 +120,18 @@ function LoginForm() {
           </form>
         </CardContent>
 
-        <CardFooter className="flex flex-col space-y-4">
+        <CardFooter className="flex flex-col space-y-3">
+          <Link
+            href="/forgot-password"
+            className="text-sm text-muted-foreground hover:text-foreground"
+          >
+            Esqueceu-se da palavra-passe?
+          </Link>
           <div className="text-center text-sm text-muted-foreground">
-            A aplicação está protegida por um único utilizador configurado na base de dados.
+            Tem um código de convite?{' '}
+            <Link href="/signup" className="text-primary hover:underline">
+              Criar conta
+            </Link>
           </div>
         </CardFooter>
       </Card>

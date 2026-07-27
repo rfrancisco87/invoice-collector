@@ -19,11 +19,23 @@ export async function POST(request: Request) {
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('id, email')
+      .select('id, email, status')
       .eq('email', normalizedEmail)
-      .single()
+      .maybeSingle()
 
     if (!profile) {
+      return NextResponse.json(
+        { error: 'Invalid email or password.' },
+        { status: 401 }
+      )
+    }
+
+    // Suspended accounts keep working credentials but are refused entry, so an
+    // admin can revoke access without destroying the user's documents. Checked
+    // before the password comparison finishes below only in the sense of
+    // ordering — the generic error message is identical either way, so this
+    // does not reveal whether the address exists.
+    if ((profile as any).status === 'suspended') {
       return NextResponse.json(
         { error: 'Invalid email or password.' },
         { status: 401 }

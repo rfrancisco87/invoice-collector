@@ -50,6 +50,7 @@ export async function GET(request: Request) {
                         token_expiry: tokenResult.newExpiry,
                     })
                     .eq('id', account.id)
+                    .eq('user_id', user.id)
             }
 
             return NextResponse.json({ connected: true, hasGmail: true, email: account.email })
