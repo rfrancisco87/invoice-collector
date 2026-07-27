@@ -37,6 +37,8 @@ export interface ClassifyResult {
     fields: WebhookResponse | null
     /** Populated when the classifier failed rather than returned a verdict. */
     error?: string
+    /** Model that produced this, for LLM backends. Null for webhook/prefilter. */
+    model?: string | null
 }
 
 export interface ClassifyInput {

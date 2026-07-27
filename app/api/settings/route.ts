@@ -77,6 +77,8 @@ export async function PATCH(request: Request) {
       duplicate_pair_default,
       auto_reject_enabled,
       auto_approve_enabled,
+      classifier_backend,
+      classifier_model,
     } = body
 
     console.log('DEBUG: Settings PATCH received:', JSON.stringify(body, null, 2))
@@ -126,6 +128,39 @@ export async function PATCH(request: Request) {
     // through this route, so the UI could not change them.
     if (auto_reject_enabled !== undefined) updates.auto_reject_enabled = !!auto_reject_enabled
     if (auto_approve_enabled !== undefined) updates.auto_approve_enabled = !!auto_approve_enabled
+
+    if (classifier_backend !== undefined) {
+      if (!['webhook', 'anthropic', 'openai'].includes(classifier_backend)) {
+        return NextResponse.json({ error: 'Backend de classificação inválido.' }, { status: 400 })
+      }
+
+      // Selecting a provider with no stored key would leave classification
+      // silently falling back to the webhook, so refuse the change instead.
+      if (classifier_backend !== 'webhook') {
+        const { data: key } = await supabase
+          .from('user_api_keys')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('provider', classifier_backend)
+          .maybeSingle()
+
+        if (!key) {
+          return NextResponse.json(
+            { error: 'Adicione uma chave de API para este fornecedor antes de o selecionar.' },
+            { status: 400 }
+          )
+        }
+      }
+
+      updates.classifier_backend = classifier_backend
+    }
+
+    if (classifier_model !== undefined) {
+      updates.classifier_model =
+        typeof classifier_model === 'string' && classifier_model.trim()
+          ? classifier_model.trim()
+          : null
+    }
 
     // Drive settings
     if (drive_folder_id !== undefined) updates.drive_folder_id = drive_folder_id

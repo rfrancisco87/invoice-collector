@@ -1,7 +1,13 @@
 import { createClient } from '@/lib/supabase/server'
 import { calculateFileHash } from '@/lib/gmail'
 import { getDriveClient } from '@/lib/google-drive'
-import { applyConfidenceGate, classifyDocument, runPrefilter } from '@/lib/classifier'
+import {
+    applyConfidenceGate,
+    applyPostDecisionRules,
+    classifyDocument,
+    loadRules,
+    runPrefilter,
+} from '@/lib/classifier'
 import { checkAutoDecision } from '@/lib/auto-decision'
 import { Readable } from 'stream'
 
@@ -69,15 +75,17 @@ export async function ingestDocument(
         // BYO keys land — no tokens. It is deliberately conservative: anything
         // ambiguous passes through, because losing a real invoice is far worse
         // than making the user reject one extra document.
-        const prefilter = runPrefilter(
-            {
-                filename,
-                subject: metadata.subject,
-                sender: metadata.sender,
-                senderDomain: metadata.senderDomain,
-            },
-            settings,
-        )
+        // Loaded once and reused by all three layers.
+        const rules = await loadRules(supabase, user.id)
+
+        const classifyContext = {
+            filename,
+            subject: metadata.subject,
+            sender: metadata.sender,
+            senderDomain: metadata.senderDomain,
+        }
+
+        const prefilter = runPrefilter(classifyContext, settings, rules)
 
         if (prefilter?.verdict === 'skip') {
             log.push(`⊘ PRE-FILTER SKIP - ${prefilter.reason}`)
@@ -224,37 +232,50 @@ export async function ingestDocument(
         // silently routed through the app owner's n8n instance — their quota,
         // their bill, their logs.
         log.push(`Classifying...`)
-        const classifyResult = await classifyDocument(
-            {
-                fileData,
-                filename,
-                subject: metadata.subject,
-                sender: metadata.sender,
-                senderDomain: metadata.senderDomain,
-            },
+        const rawResult = await classifyDocument(
+            { fileData, ...classifyContext },
             settings,
+            // supabase/userId let the LLM backend read this user's encrypted
+            // key; rules supply the prompt hints.
+            { supabase, userId: user.id, rules },
         )
 
+        // Post-decision rules can override the classifier outright, so they run
+        // before the confidence gate — a user-forced verdict is an instruction,
+        // not a prediction, and must not then be second-guessed for confidence.
+        const postRules = applyPostDecisionRules(rawResult, rules, classifyContext)
+        const classifyResult = postRules.result
+
         const gate = applyConfidenceGate(classifyResult, settings)
+        const needsReview = gate.needsReview || postRules.forcedReview
+        const gateReason = postRules.forcedReview && !gate.needsReview
+            ? `${gate.reason} · marcado para revisão por regra`
+            : gate.reason
+
+        const appliedRules = [...(prefilter?.appliedRules ?? []), ...postRules.applied]
+
         const classification = classifyResult.classification
         const webhookData = classifyResult.fields
         const webhookError = classifyResult.error ?? null
 
         log.push(`Classification: ${classification} (${classifyResult.confidence.toFixed(2)}) — ${classifyResult.reason}`)
+        if (appliedRules.length > 0) {
+            log.push(`Regras aplicadas: ${appliedRules.map((r) => r.name).join(', ')}`)
+        }
 
         // A confidently-identified non-invoice is discarded, as before. The
         // difference is that "confidently" now means something: a low-confidence
         // or failed classification falls through and is kept as pending +
         // needs_review, instead of being deleted on the strength of a guess.
         // That deletion path is how real invoices were disappearing.
-        if (classifyResult.variant === 'other' && !gate.needsReview) {
+        if (classifyResult.variant === 'other' && !needsReview) {
             log.push(`⊘ SKIPPED - ${classifyResult.reason}`)
             await drive.files.delete({ fileId: driveFileId })
             return { success: true, action: 'skipped_type', details: classifyResult.reason, log }
         }
 
-        if (gate.needsReview) {
-            log.push(`⚑ NEEDS REVIEW - ${gate.reason}`)
+        if (needsReview) {
+            log.push(`⚑ NEEDS REVIEW - ${gateReason}`)
         }
 
         // 5. DB Insert
@@ -275,9 +296,11 @@ export async function ingestDocument(
             // 'unclassified' and so cannot support invoice/receipt pairing.
             variant: classifyResult.variant,
             classification_source: classifyResult.source,
-            classification_reason: gate.reason,
-            needs_review: gate.needsReview,
+            classification_model: classifyResult.model ?? null,
+            classification_reason: gateReason,
+            needs_review: needsReview,
             prefilter_matched: prefilter?.matched ?? null,
+            rules_applied: appliedRules.length > 0 ? appliedRules : null,
             status: 'pending',
             drive_file_id: driveFileId,
             drive_folder_path: 'Pending Approval',

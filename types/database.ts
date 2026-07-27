@@ -296,6 +296,7 @@ export interface Database {
           classification_confidence_threshold: number
           duplicate_pair_default: 'ask' | 'invoice' | 'receipt' | 'both'
           classifier_backend: 'webhook' | 'anthropic' | 'openai'
+          classifier_model: string | null
           prefilter_enabled: boolean
           created_at: string
           updated_at: string
@@ -333,6 +334,7 @@ export interface Database {
           classification_confidence_threshold?: number
           duplicate_pair_default?: 'ask' | 'invoice' | 'receipt' | 'both'
           classifier_backend?: 'webhook' | 'anthropic' | 'openai'
+          classifier_model?: string | null
           prefilter_enabled?: boolean
           created_at?: string
           updated_at?: string
@@ -370,6 +372,7 @@ export interface Database {
           classification_confidence_threshold?: number
           duplicate_pair_default?: 'ask' | 'invoice' | 'receipt' | 'both'
           classifier_backend?: 'webhook' | 'anthropic' | 'openai'
+          classifier_model?: string | null
           prefilter_enabled?: boolean
           created_at?: string
           updated_at?: string
@@ -391,6 +394,8 @@ export interface Database {
           final_classification: DocumentClassification
           confidence_score: number | null
           classification_source: string | null
+          classification_model: string | null
+          rules_applied: Json | null
           variant: string | null
           pair_state: string
           paired_with_id: string | null
@@ -438,6 +443,8 @@ export interface Database {
           final_classification: DocumentClassification
           confidence_score?: number | null
           classification_source?: string | null
+          classification_model?: string | null
+          rules_applied?: Json | null
           variant?: string | null
           pair_state?: string
           paired_with_id?: string | null
@@ -485,6 +492,8 @@ export interface Database {
           final_classification?: DocumentClassification
           confidence_score?: number | null
           classification_source?: string | null
+          classification_model?: string | null
+          rules_applied?: Json | null
           variant?: string | null
           pair_state?: string
           paired_with_id?: string | null

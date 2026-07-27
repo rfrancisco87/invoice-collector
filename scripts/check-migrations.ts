@@ -60,6 +60,23 @@ const MIGRATIONS: MigrationCheck[] = [
             { table: 'user_settings', column: 'classifier_backend' },
         ],
     },
+    {
+        file: '023_llm_classification.sql',
+        description: 'LLM classification model selection and usage tracking',
+        probes: [
+            { table: 'llm_usage' },
+            { table: 'user_settings', column: 'classifier_model' },
+            { table: 'documents', column: 'classification_model' },
+        ],
+    },
+    {
+        file: '024_classification_rules.sql',
+        description: 'User-defined classification rules',
+        probes: [
+            { table: 'classification_rules' },
+            { table: 'documents', column: 'rules_applied' },
+        ],
+    },
 ]
 
 async function main() {

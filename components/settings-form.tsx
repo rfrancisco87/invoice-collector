@@ -8,6 +8,7 @@ import { Bell, Mail, Clock, Check, Tag, Archive, AlertCircle, HardDrive, FolderI
 import Link from 'next/link'
 import { DriveFolderSelector } from './drive-folder-selector'
 import { ApiKeyManager } from './api-key-manager'
+import { RulesManager } from './rules-manager'
 import {
   APPROVED_FILENAME_VARIABLES,
   DEFAULT_APPROVED_FILENAME_TEMPLATE,
@@ -49,6 +50,8 @@ interface Settings {
   duplicate_pair_default?: 'ask' | 'invoice' | 'receipt' | 'both'
   auto_reject_enabled?: boolean
   auto_approve_enabled?: boolean
+  classifier_backend?: 'webhook' | 'anthropic' | 'openai'
+  classifier_model?: string | null
 }
 
 interface SettingsFormProps {
@@ -98,6 +101,8 @@ export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormPr
     duplicate_pair_default: settings?.duplicate_pair_default || 'invoice',
     auto_reject_enabled: settings?.auto_reject_enabled ?? true,
     auto_approve_enabled: settings?.auto_approve_enabled ?? false,
+    classifier_backend: settings?.classifier_backend || 'webhook',
+    classifier_model: settings?.classifier_model || '',
   })
   const [isSaving, setIsSaving] = useState(false)
   const [isSendingTest, setIsSendingTest] = useState(false)
@@ -720,6 +725,46 @@ export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormPr
         </div>
 
         <div className="space-y-5">
+          <div>
+            <Label htmlFor="classifier_backend">Motor de classificação</Label>
+            <select
+              id="classifier_backend"
+              value={formData.classifier_backend}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  classifier_backend: e.target.value as NonNullable<
+                    Settings['classifier_backend']
+                  >,
+                })
+              }
+              className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              <option value="webhook">Webhook (n8n)</option>
+              <option value="anthropic">Anthropic (Claude)</option>
+              <option value="openai">OpenAI</option>
+            </select>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Para usar Anthropic ou OpenAI tem de adicionar primeiro a chave de API abaixo.
+              Os custos são cobrados na sua conta do fornecedor.
+            </p>
+          </div>
+
+          <div>
+            <Label htmlFor="classifier_model">Modelo (opcional)</Label>
+            <Input
+              type="text"
+              id="classifier_model"
+              value={formData.classifier_model}
+              onChange={(e) => setFormData({ ...formData, classifier_model: e.target.value })}
+              placeholder="Deixe vazio para usar o modelo predefinido"
+              className="mt-1 font-mono"
+            />
+            <p className="mt-1 text-sm text-muted-foreground">
+              Só necessário se o modelo predefinido não estiver disponível na sua conta.
+            </p>
+          </div>
+
           <div className="flex items-start">
             <div className="flex h-5 items-center">
               <input
@@ -819,6 +864,8 @@ export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormPr
         must not ride along in the general settings PATCH payload.
       */}
       <ApiKeyManager />
+
+      <RulesManager />
 
       {/* Save Button */}
       <div className="flex justify-end">
