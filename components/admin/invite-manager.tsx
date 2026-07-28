@@ -140,26 +140,28 @@ export function InviteManager() {
       </CardHeader>
 
       <CardContent className="space-y-6">
-        <form onSubmit={createInvite} className="flex flex-col gap-3 sm:flex-row sm:items-end">
-          <div className="flex-1 space-y-2">
-            <Label htmlFor="inviteEmail">Email (opcional)</Label>
-            <Input
-              id="inviteEmail"
-              type="email"
-              placeholder="pessoa@exemplo.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={creating}
-            />
-            <p className="text-xs text-muted-foreground">
-              Com email, o convite é enviado e só pode ser usado por esse endereço.
-              Sem email, gera um código para partilhar manualmente.
-            </p>
+        <form onSubmit={createInvite} className="space-y-2">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="flex-1 space-y-2">
+              <Label htmlFor="inviteEmail">Email (opcional)</Label>
+              <Input
+                id="inviteEmail"
+                type="email"
+                placeholder="pessoa@exemplo.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={creating}
+              />
+            </div>
+            <Button type="submit" disabled={creating} className="gap-2">
+              <Plus className="h-4 w-4" />
+              {creating ? 'A criar...' : 'Criar convite'}
+            </Button>
           </div>
-          <Button type="submit" disabled={creating} className="gap-2">
-            <Plus className="h-4 w-4" />
-            {creating ? 'A criar...' : 'Criar convite'}
-          </Button>
+          <p className="text-xs text-muted-foreground">
+            Com email, o convite é enviado e só pode ser usado por esse endereço.
+            Sem email, gera um código para partilhar manualmente.
+          </p>
         </form>
 
         <div className="space-y-2">

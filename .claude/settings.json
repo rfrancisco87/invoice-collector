@@ -3,7 +3,13 @@
     "allow": [
       "Bash(python3 -)",
       "Bash(git commit *)",
-      "Bash(grep -oE '`[A-Z_]{4,}`' README.md)"
+      "Bash(grep -oE '`[A-Z_]{4,}`' README.md)",
+      "Bash(git grep *)",
+      "Bash(gh repo *)",
+      "Bash(git rev-list *)",
+      "Bash(awk '{print $1}')",
+      "Bash(git cat-file *)",
+      "Bash(grep -aohE \"whsec_[A-Za-z0-9+/=_-]{16,}|eyJhbGciOi[A-Za-z0-9_-]*\\\\.[A-Za-z0-9_-]{40,}\\\\.[A-Za-z0-9_-]{20,}|GOCSPX-[A-Za-z0-9_-]{20,}|sk-ant-api03-[A-Za-z0-9_-]{20,}|AIza[0-9A-Za-z_-]{35}\")"
     ]
   }
 }

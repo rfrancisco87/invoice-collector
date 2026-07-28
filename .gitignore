@@ -2,10 +2,9 @@
 # CRITICAL: ENVIRONMENT VARIABLES
 # ===================================
 # NEVER COMMIT API KEYS OR SECRETS
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env
+.env.*
+!.env.example
 
 # Keep these for reference (no secrets)
 # !.env.example
