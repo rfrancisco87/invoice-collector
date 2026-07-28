@@ -74,6 +74,10 @@ const ORDER: string[] = [
 
     // Depends on the views created by 013.
     'supabase/migrations/20260204_secure_cron_views.sql',
+
+    // Replaces the admin views from 011. Must run after 019, which adds the
+    // profiles.status column the corrected definition filters on.
+    'supabase/migrations/025_fix_admin_views.sql',
 ]
 
 /**

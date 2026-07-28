@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!--
+    Favicon matching the header logo in components/layout/header.tsx:
+    a rounded square in the primary colour with lucide's file-text glyph.
+
+    The blue is the primary colour from app/globals.css, hsl(221.2 83.2% 53.3%),
+    hard-coded because a favicon is rendered by the browser chrome and cannot
+    read CSS variables. Keeping the tile opaque also means the icon stays
+    legible on both light and dark tab bars instead of vanishing into one.
+  -->
+  <rect width="32" height="32" rx="7" fill="#2563eb"/>
+
+  <!--
+    lucide file-text, drawn on its native 24 unit grid and scaled to 22 units so
+    it fills the tile the way the 20px glyph fills the 32px header box. Stroke
+    width is raised from lucide's 2 to 2.4 before scaling: at a 16px favicon the
+    default weight renders under one pixel and the glyph turns to mush.
+  -->
+  <g transform="translate(5 5) scale(0.9167)"
+     fill="none"
+     stroke="#ffffff"
+     stroke-width="2.4"
+     stroke-linecap="round"
+     stroke-linejoin="round">
+    <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/>
+    <path d="M14 2v4a2 2 0 0 0 2 2h4"/>
+    <path d="M16 13H8"/>
+    <path d="M16 17H8"/>
+    <path d="M10 9H8"/>
+  </g>
+</svg>

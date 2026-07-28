@@ -25,6 +25,18 @@ interface MigrationCheck {
 
 const MIGRATIONS: MigrationCheck[] = [
     {
+        // Checked despite being an older migration: these are views, and a
+        // missing view surfaces on the dashboard as every metric reading zero
+        // rather than as an error. That is exactly the failure this script
+        // exists to make visible.
+        file: '011_admin_rls_policies.sql / 025_fix_admin_views.sql',
+        description: 'Admin dashboard views',
+        probes: [
+            { table: 'admin_stats' },
+            { table: 'admin_sync_logs' },
+        ],
+    },
+    {
         file: '019_multi_user_accounts.sql',
         description: 'Invite-only signup, password reset, account status',
         probes: [
@@ -75,6 +87,15 @@ const MIGRATIONS: MigrationCheck[] = [
         probes: [
             { table: 'classification_rules' },
             { table: 'documents', column: 'rules_applied' },
+        ],
+    },
+    {
+        file: '025_fix_admin_views.sql',
+        description: 'Corrected admin views (counts profiles, calendar-day windows)',
+        probes: [
+            // Only present in the corrected definition — distinguishes 025
+            // having run from the original 011 views still being in place.
+            { table: 'admin_sync_logs', column: 'user_email' },
         ],
     },
 ]
