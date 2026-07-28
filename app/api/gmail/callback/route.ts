@@ -49,7 +49,31 @@ export async function GET(request: Request) {
       `${process.env.NEXT_PUBLIC_APP_URL}/api/gmail/callback`
     )
 
-    const { tokens } = await oauth2Client.getToken(code)
+    // Exchanging the code is the step most likely to fail, and it fails for
+    // reasons the user can act on (a reused code after a refresh, a stale
+    // client secret). Collapsing those into the generic catch below left no
+    // way to tell them apart from the logs.
+    let tokens
+    try {
+      ({ tokens } = await oauth2Client.getToken(code))
+    } catch (exchangeError: any) {
+      const detail = exchangeError?.response?.data ?? exchangeError?.message
+      console.error('[Gmail Callback] Code exchange failed:', detail)
+
+      const googleError = String(exchangeError?.response?.data?.error ?? '')
+      const reason =
+        googleError === 'invalid_grant'
+          ? 'code_expired'
+          : googleError === 'redirect_uri_mismatch'
+            ? 'redirect_mismatch'
+            : googleError === 'invalid_client'
+              ? 'bad_client'
+              : 'exchange_failed'
+
+      return NextResponse.redirect(
+        `${process.env.NEXT_PUBLIC_APP_URL}/gmail-connect?error=${reason}`
+      )
+    }
 
     if (!tokens.access_token || !tokens.refresh_token) {
       console.error('[Gmail Callback] Missing tokens:', {
@@ -67,8 +91,20 @@ export async function GET(request: Request) {
     // which we might not have if the user selected 'storage' mode.
     oauth2Client.setCredentials(tokens)
     const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client })
-    const userInfo = await oauth2.userinfo.get()
-    const gmailEmail = userInfo.data.email
+
+    let gmailEmail: string | null | undefined
+    try {
+      const userInfo = await oauth2.userinfo.get()
+      gmailEmail = userInfo.data.email
+    } catch (userInfoError: any) {
+      console.error(
+        '[Gmail Callback] userinfo lookup failed:',
+        userInfoError?.response?.data ?? userInfoError?.message
+      )
+      return NextResponse.redirect(
+        `${process.env.NEXT_PUBLIC_APP_URL}/gmail-connect?error=userinfo_failed`
+      )
+    }
 
     if (!gmailEmail) {
       return NextResponse.redirect(

@@ -64,6 +64,11 @@ function GmailConnectContent() {
       missing_tokens: 'Falha ao obter tokens. Por favor tente novamente.',
       no_email: 'Não foi possível obter o email Gmail.',
       db_error: 'Erro ao guardar dados. Por favor tente novamente.',
+      code_expired: 'O código de autorização já foi usado ou expirou. Inicie a ligação de novo a partir desta página.',
+      redirect_mismatch: 'O URL de retorno não corresponde ao configurado na Google Cloud Console.',
+      bad_client: 'Credenciais Google inválidas. Verifique GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET.',
+      exchange_failed: 'A Google recusou a troca do código de autorização.',
+      userinfo_failed: 'Autorização obtida, mas não foi possível ler o perfil Google.',
       callback_failed: 'Falha na conexão. Por favor tente novamente.',
     }
     return messages[errorCode] || 'Ocorreu um erro. Por favor tente novamente.'

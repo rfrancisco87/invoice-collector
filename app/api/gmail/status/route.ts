@@ -63,8 +63,29 @@ export async function GET(request: Request) {
                 return NextResponse.json({ connected: true, hasGmail: false, email: account.email })
             }
 
-            // If other error (e.g. invalid grant), might be disconnected
-            console.error('Gmail status check error', e)
+            // A revoked or expired grant means the row in gmail_accounts is a
+            // leftover, not a connection: the tokens no longer open anything.
+            // Reporting `connected: true` here made the UI show "account
+            // connected" next to the reconnect error that had just failed.
+            const message = String(e?.message ?? '')
+            const isRevoked =
+                message.includes('invalid_grant') ||
+                message.includes('Token has been expired or revoked') ||
+                message.includes('No refresh token available')
+
+            if (isRevoked) {
+                console.error('[Gmail Status] Grant no longer valid:', message)
+                return NextResponse.json({
+                    connected: false,
+                    hasGmail: false,
+                    email: account.email,
+                    reason: 'revoked',
+                })
+            }
+
+            // Anything else (network, transient Google failure) leaves the
+            // connection claim intact — we could not prove it is broken.
+            console.error('[Gmail Status] Check failed:', e)
             return NextResponse.json({ connected: true, hasGmail: false, email: account.email, error: e.message })
         }
 

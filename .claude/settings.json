@@ -17,7 +17,10 @@
       "Bash(git config *)",
       "Bash(echo \"hooksPath=$\\(git config core.hooksPath\\)\")",
       "WebFetch(domain:supabase.com)",
-      "Bash(grep -rn \"Authorization.*SERVICE_ROLE\\\\|apikey\\\\|Bearer \\\\${.*SUPABASE\\\\|Bearer \\\\\" *+ *supabase\" --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=.next app lib scripts supabase)"
+      "Bash(grep -rn \"Authorization.*SERVICE_ROLE\\\\|apikey\\\\|Bearer \\\\${.*SUPABASE\\\\|Bearer \\\\\" *+ *supabase\" --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=.next app lib scripts supabase)",
+      "Bash(curl -s -w '\\\\nHTTP %{http_code}\\\\n' -H 'apikey: __TRACKED_VAR__' -H 'Authorization: Bearer __TRACKED_VAR__' '__TRACKED_VAR__/rest/v1/documents?select=id&limit=1')",
+      "Bash(qlmanage -t -s 256 -o /private/tmp/claude-501/-Users-rfrancisco-dev-profissional-invoice-colletor/bb27ae73-8d6d-4a71-bf10-c1311f46c14d/scratchpad app/icon.svg)",
+      "Bash(python3 -c \"import xml.dom.minidom,sys; xml.dom.minidom.parse\\('app/icon.svg'\\); print\\('XML valid'\\)\")"
     ]
   }
 }
