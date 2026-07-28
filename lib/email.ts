@@ -149,6 +149,124 @@ export async function sendNewDocumentsEmail(
   }
 }
 
+/** Shared chrome so account emails look like the rest of the app's mail. */
+function accountEmailShell(title: string, bodyHtml: string) {
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>${title}</title>
+</head>
+<body style="font-family: sans-serif; line-height: 1.6; color: #374151; max-width: 600px; margin: 0 auto; padding: 20px;">
+  ${bodyHtml}
+  <p style="margin-top: 24px; padding-top: 24px; border-top: 1px solid #e5e7eb; color: #9ca3af; font-size: 14px;">
+    Invoice Collector - Automatic invoice organization
+  </p>
+</body>
+</html>
+  `
+}
+
+function fromAddress() {
+  return process.env.EMAIL_FROM || 'onboarding@resend.dev'
+}
+
+function appUrl() {
+  return process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+}
+
+/**
+ * Invite email. The code is the credential, so it is shown in full — there is
+ * nothing to protect by truncating it, and the recipient has to type it.
+ */
+export async function sendInviteEmail(
+  toEmail: string,
+  code: string,
+  expiresAt: Date
+) {
+  const signupUrl = `${appUrl()}/signup?code=${encodeURIComponent(code)}`
+  const expiryText = expiresAt.toLocaleDateString('pt-PT', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  })
+
+  const { data, error } = await resend.emails.send({
+    from: fromAddress(),
+    to: toEmail,
+    subject: 'Convite para o Invoice Collector',
+    html: accountEmailShell(
+      'Convite',
+      `
+  <h1 style="color: #2563eb;">Foi convidado para o Invoice Collector</h1>
+  <p>Use o código abaixo para criar a sua conta.</p>
+  <p style="font-size: 24px; font-weight: 700; letter-spacing: 2px; background: #f3f4f6; padding: 16px; border-radius: 8px; text-align: center;">
+    ${code}
+  </p>
+  <p style="text-align: center; margin: 24px 0;">
+    <a href="${signupUrl}" style="display: inline-block; background: #2563eb; color: #ffffff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600;">
+      Criar conta
+    </a>
+  </p>
+  <p style="color: #6b7280; font-size: 14px;">
+    O código é de utilização única e expira a ${expiryText}.
+  </p>
+      `
+    ),
+  })
+
+  if (error) {
+    console.error('[Email] Invite send error:', error)
+    throw new Error(`Failed to send invite email: ${error.message}`)
+  }
+
+  return { success: true, emailId: data?.id }
+}
+
+/**
+ * Password reset email.
+ *
+ * The link carries the only copy of the plaintext token — the database holds
+ * just its SHA-256 hash — so it cannot be re-sent or recovered, only reissued.
+ */
+export async function sendPasswordResetEmail(
+  toEmail: string,
+  token: string,
+  expiryMinutes: number
+) {
+  const resetUrl = `${appUrl()}/reset-password?token=${encodeURIComponent(token)}`
+
+  const { data, error } = await resend.emails.send({
+    from: fromAddress(),
+    to: toEmail,
+    subject: 'Repor a palavra-passe - Invoice Collector',
+    html: accountEmailShell(
+      'Repor palavra-passe',
+      `
+  <h1 style="color: #2563eb;">Repor a sua palavra-passe</h1>
+  <p>Recebemos um pedido para repor a palavra-passe desta conta.</p>
+  <p style="text-align: center; margin: 24px 0;">
+    <a href="${resetUrl}" style="display: inline-block; background: #2563eb; color: #ffffff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600;">
+      Definir nova palavra-passe
+    </a>
+  </p>
+  <p style="color: #6b7280; font-size: 14px;">
+    O link expira em ${expiryMinutes} minutos e só pode ser usado uma vez.
+    Se não pediu esta alteração, ignore este email — a palavra-passe atual continua válida.
+  </p>
+      `
+    ),
+  })
+
+  if (error) {
+    console.error('[Email] Password reset send error:', error)
+    throw new Error(`Failed to send password reset email: ${error.message}`)
+  }
+
+  return { success: true, emailId: data?.id }
+}
+
 export async function sendTestEmail(toEmail: string) {
   try {
     // Use Resend's testing domain if EMAIL_FROM is not set

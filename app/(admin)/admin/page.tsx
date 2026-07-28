@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { InviteManager } from '@/components/admin/invite-manager'
 import { Users, Mail, RefreshCw, FileText, CheckCircle, Clock, AlertCircle } from 'lucide-react'
 
 export default async function AdminPage() {
@@ -142,6 +143,11 @@ export default async function AdminPage() {
             </div>
           </CardContent>
         </Card>
+      </div>
+
+      {/* Invites */}
+      <div className="mb-8">
+        <InviteManager />
       </div>
 
       {/* Sync Logs */}

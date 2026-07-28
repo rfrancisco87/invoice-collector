@@ -51,6 +51,13 @@ interface Document {
   currency?: string | null
   is_demo?: boolean
   source?: 'gmail' | 'inbox_folder'
+  needs_review?: boolean
+  classification_reason?: string | null
+  classification_source?: string | null
+  variant?: string | null
+  pair_state?: string | null
+  paired_with_id?: string | null
+  pair_reason?: string | null
 }
 
 interface DocumentListProps {
@@ -190,6 +197,51 @@ export function DocumentList({ documents }: DocumentListProps) {
     )
   }
 
+  // Invoice/receipt pairs render as one row, not two. The invoice side is the
+  // anchor and its sibling is folded into the pair banner, so the user resolves
+  // the pair in one decision instead of judging two rows that look unrelated.
+  const documentsById = new Map(documents.map((doc) => [doc.id, doc]))
+
+  const foldedIntoPair = new Set<string>()
+  for (const doc of documents) {
+    if (doc.pair_state !== 'awaiting_choice' || !doc.paired_with_id) continue
+    if (foldedIntoPair.has(doc.id)) continue
+    if (!documentsById.has(doc.paired_with_id)) continue
+
+    // Anchor on the invoice; fold the other side away.
+    if (doc.variant === 'invoice') {
+      foldedIntoPair.add(doc.paired_with_id)
+    }
+  }
+
+  const visibleDocuments = documents.filter((doc) => !foldedIntoPair.has(doc.id))
+
+  const resolvePair = async (documentId: string, keep: 'invoice' | 'receipt' | 'both') => {
+    setProcessingId(documentId)
+    try {
+      const response = await fetch('/api/documents/pair-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documentId, keep }),
+      })
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => null)
+        toast.error(data?.error || 'Falha ao resolver o par')
+        return
+      }
+
+      toast.success(
+        keep === 'both' ? 'Ambos os documentos mantidos' : `Mantido apenas ${keep === 'invoice' ? 'a fatura' : 'o recibo'}`
+      )
+      router.refresh()
+    } catch {
+      toast.error('Falha ao resolver o par')
+    } finally {
+      setProcessingId(null)
+    }
+  }
+
   return (
     <div>
       {/* Column Headers */}
@@ -221,7 +273,7 @@ export function DocumentList({ documents }: DocumentListProps) {
 
       {/* Document List */}
       <div className="divide-y divide-border">
-        {documents.map((doc, index) => {
+        {visibleDocuments.map((doc, index) => {
           const isProcessing = processingId === doc.id
           const isReprocessing = reprocessingId === doc.id
           const isReclassifying = reclassifyingId === doc.id
@@ -233,6 +285,55 @@ export function DocumentList({ documents }: DocumentListProps) {
               className={`p-4 transition-colors hover:bg-muted/70 ${isEven ? 'bg-muted/20' : 'bg-background'
                 }`}
             >
+              {/*
+                Pair chooser. Only rendered when the user's duplicate_pair_default
+                is 'ask' — with any other setting the pair is already resolved at
+                ingest and never reaches this state.
+              */}
+              {doc.pair_state === 'awaiting_choice' && doc.paired_with_id && (
+                <div className="mb-3 rounded-lg border border-info/30 bg-info/5 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-foreground">
+                        Este email contém fatura e recibo do mesmo pagamento
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {doc.pair_reason || 'Documentos correspondentes'}
+                        {' · '}
+                        {doc.filename}
+                        {' + '}
+                        {documentsById.get(doc.paired_with_id)?.filename ?? 'documento associado'}
+                      </p>
+                    </div>
+                    <div className="flex flex-shrink-0 items-center gap-2">
+                      <Button
+                        size="sm"
+                        onClick={() => resolvePair(doc.id, 'invoice')}
+                        disabled={isProcessing}
+                      >
+                        Guardar fatura
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => resolvePair(doc.id, 'receipt')}
+                        disabled={isProcessing}
+                      >
+                        Guardar recibo
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => resolvePair(doc.id, 'both')}
+                        disabled={isProcessing}
+                      >
+                        Guardar ambos
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-center gap-4">
                 {/* Type Indicator Column */}
                 <div className="flex-shrink-0 w-8">
@@ -298,9 +399,34 @@ export function DocumentList({ documents }: DocumentListProps) {
                       DEMO
                     </Badge>
                   )}
-                  <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
-                    {Math.round(doc.confidence_score * 100)}%
-                  </span>
+                  {/*
+                    Confidence is only meaningful alongside why it was assigned.
+                    The tooltip carries the classifier's reasoning so a wrong
+                    call can be understood, not just corrected.
+                  */}
+                  <TooltipProvider delayDuration={300}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span
+                          className={`text-xs px-2 py-0.5 rounded-full cursor-default ${doc.needs_review
+                            ? 'bg-warning/10 text-warning'
+                            : 'text-muted-foreground bg-muted'
+                            }`}
+                        >
+                          {Math.round(doc.confidence_score * 100)}%
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs">
+                        <p>{doc.classification_reason || 'Sem informação de classificação'}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  {doc.needs_review && (
+                    <Badge className="bg-warning/10 text-warning border-warning/20 gap-1 text-xs">
+                      <AlertCircle className="h-3 w-3" />
+                      Rever
+                    </Badge>
+                  )}
                   {doc.was_reclassified && (
                     <Badge variant="outline" className="text-xs">
                       Reclassificado

@@ -198,6 +198,7 @@ export async function POST(request: Request) {
         // @ts-ignore
         .update(documentUpdate)
         .eq('id', documentId)
+        .eq('user_id', user.id)
 
       // Record feedback
       // @ts-ignore
@@ -233,6 +234,7 @@ export async function POST(request: Request) {
           rejected_at: new Date().toISOString(),
         })
         .eq('id', documentId)
+        .eq('user_id', user.id)
 
       // Record feedback
       // @ts-ignore

@@ -23,5 +23,10 @@
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  // scripts/ holds standalone CommonJS maintenance utilities run via `npx tsx`.
+  // They are not part of the Next build, and because they use `require` without
+  // module syntax TypeScript treats them as one shared global scope, so every
+  // shared identifier collides. Excluding them keeps `npm run type-check`
+  // meaningful for application code.
+  "exclude": ["node_modules", "scripts"]
 }

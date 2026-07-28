@@ -1,7 +1,13 @@
 import { createClient } from '@/lib/supabase/server'
 import { calculateFileHash } from '@/lib/gmail'
 import { getDriveClient } from '@/lib/google-drive'
-import { sendPdfToWebhook } from '@/lib/webhook'
+import {
+    applyConfidenceGate,
+    applyPostDecisionRules,
+    classifyDocument,
+    loadRules,
+    runPrefilter,
+} from '@/lib/classifier'
 import { checkAutoDecision } from '@/lib/auto-decision'
 import { Readable } from 'stream'
 
@@ -59,6 +65,46 @@ export async function ingestDocument(
         if (existingDoc) {
             log.push(`⊘ DUPLICATE - File already exists: ${existingDoc.filename}`)
             return { success: true, action: 'duplicate_skipped', log }
+        }
+
+        // 2a. Deterministic pre-filter (Layer A)
+        //
+        // Runs before the Drive upload and before the classifier, on metadata
+        // alone. Bank statements, contracts, boarding passes and payslips are
+        // discarded here so they cost no Drive quota, no webhook call, and — once
+        // BYO keys land — no tokens. It is deliberately conservative: anything
+        // ambiguous passes through, because losing a real invoice is far worse
+        // than making the user reject one extra document.
+        // Loaded once and reused by all three layers.
+        const rules = await loadRules(supabase, user.id)
+
+        const classifyContext = {
+            filename,
+            subject: metadata.subject,
+            sender: metadata.sender,
+            senderDomain: metadata.senderDomain,
+        }
+
+        const prefilter = runPrefilter(classifyContext, settings, rules)
+
+        if (prefilter?.verdict === 'skip') {
+            log.push(`⊘ PRE-FILTER SKIP - ${prefilter.reason}`)
+
+            // Clean up the inbox original, matching auto-reject behaviour: the
+            // file was never uploaded to Pending, so only the source remains.
+            if (metadata.source === 'inbox_folder' && metadata.inboxFileId) {
+                try {
+                    const drive = await getDriveClient(providerToken)
+                    await drive.files.delete({ fileId: metadata.inboxFileId })
+                } catch (err: any) {
+                    const status = err?.code ?? err?.response?.status
+                    if (status !== 404) {
+                        log.push(`⚠ Inbox cleanup failed: ${err?.message || err}`)
+                    }
+                }
+            }
+
+            return { success: true, action: 'skipped_type', details: prefilter.reason, log }
         }
 
         // 2b. Auto-decision (learning from prior feedback)
@@ -179,35 +225,57 @@ export async function ingestDocument(
         const driveFileId = fileResponse.data.id
         log.push(`Uploaded to Drive: ${driveFileId}`)
 
-        // 4. Webhook Classification
-        const effectiveWebhookUrl = settings.webhook_url?.trim() || process.env.WEBHOOK_URL?.trim()
-        let webhookData = null
-        let webhookError = null
-        let classification: 'invoice' | 'credit_note' | 'unclassified' = 'unclassified'
+        // 4. Classification (Layer B) + confidence gate (Layer C)
+        //
+        // Per-user backend only. There used to be a process.env.WEBHOOK_URL
+        // fallback here, which meant any user without their own endpoint was
+        // silently routed through the app owner's n8n instance — their quota,
+        // their bill, their logs.
+        log.push(`Classifying...`)
+        const rawResult = await classifyDocument(
+            { fileData, ...classifyContext },
+            settings,
+            // supabase/userId let the LLM backend read this user's encrypted
+            // key; rules supply the prompt hints.
+            { supabase, userId: user.id, rules },
+        )
 
-        if (effectiveWebhookUrl) {
-            try {
-                log.push(`Sending to webhook...`)
-                const response = await sendPdfToWebhook(fileData, filename, effectiveWebhookUrl)
-                webhookData = response
+        // Post-decision rules can override the classifier outright, so they run
+        // before the confidence gate — a user-forced verdict is an instruction,
+        // not a prediction, and must not then be second-guessed for confidence.
+        const postRules = applyPostDecisionRules(rawResult, rules, classifyContext)
+        const classifyResult = postRules.result
 
-                if (response.document_type === 'supplier_invoice') {
-                    classification = 'invoice'
-                } else if (response.document_type === 'credit_note') {
-                    classification = 'credit_note'
-                } else {
-                    // Skip logic? user wants to skip.
-                    // If we skip, we should delete the drive file?
-                    log.push(`⊘ SKIPPED - Document type "${response.document_type}" is not an invoice`)
-                    await drive.files.delete({ fileId: driveFileId })
-                    return { success: true, action: 'skipped_type', log }
-                }
-            } catch (err) {
-                webhookError = err instanceof Error ? err.message : 'Unknown webhook error'
-                log.push(`⚠ Webhook failed: ${webhookError}`)
-                // If webhook fails, we default to unclassified but KEEP the file?
-                // Or skip? Usually keep as Pending.
-            }
+        const gate = applyConfidenceGate(classifyResult, settings)
+        const needsReview = gate.needsReview || postRules.forcedReview
+        const gateReason = postRules.forcedReview && !gate.needsReview
+            ? `${gate.reason} · marcado para revisão por regra`
+            : gate.reason
+
+        const appliedRules = [...(prefilter?.appliedRules ?? []), ...postRules.applied]
+
+        const classification = classifyResult.classification
+        const webhookData = classifyResult.fields
+        const webhookError = classifyResult.error ?? null
+
+        log.push(`Classification: ${classification} (${classifyResult.confidence.toFixed(2)}) — ${classifyResult.reason}`)
+        if (appliedRules.length > 0) {
+            log.push(`Regras aplicadas: ${appliedRules.map((r) => r.name).join(', ')}`)
+        }
+
+        // A confidently-identified non-invoice is discarded, as before. The
+        // difference is that "confidently" now means something: a low-confidence
+        // or failed classification falls through and is kept as pending +
+        // needs_review, instead of being deleted on the strength of a guess.
+        // That deletion path is how real invoices were disappearing.
+        if (classifyResult.variant === 'other' && !needsReview) {
+            log.push(`⊘ SKIPPED - ${classifyResult.reason}`)
+            await drive.files.delete({ fileId: driveFileId })
+            return { success: true, action: 'skipped_type', details: classifyResult.reason, log }
+        }
+
+        if (needsReview) {
+            log.push(`⚑ NEEDS REVIEW - ${gateReason}`)
         }
 
         // 5. DB Insert
@@ -223,7 +291,16 @@ export async function ingestDocument(
             filename: filename,
             original_classification: classification,
             final_classification: classification,
-            confidence_score: webhookData ? 1.0 : 0.5,
+            confidence_score: classifyResult.confidence,
+            // Kept alongside final_classification, which collapses receipts into
+            // 'unclassified' and so cannot support invoice/receipt pairing.
+            variant: classifyResult.variant,
+            classification_source: classifyResult.source,
+            classification_model: classifyResult.model ?? null,
+            classification_reason: gateReason,
+            needs_review: needsReview,
+            prefilter_matched: prefilter?.matched ?? null,
+            rules_applied: appliedRules.length > 0 ? appliedRules : null,
             status: 'pending',
             drive_file_id: driveFileId,
             drive_folder_path: 'Pending Approval',

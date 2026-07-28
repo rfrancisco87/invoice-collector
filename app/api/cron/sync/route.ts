@@ -1,39 +1,90 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { timingSafeEqual } from 'crypto'
-import {
-  scanGmailForInvoices,
-  calculateFileHash,
-  getGmailClient,
-  getOrCreateLabel,
-  applyLabelToMessage,
-  archiveMessage,
-} from '@/lib/gmail'
-import { sendPdfToWebhook } from '@/lib/webhook'
-import { getDriveClient } from '@/lib/google-drive'
 import { getValidAccessToken } from '@/lib/token-refresh'
 import { sendNewDocumentsEmail } from '@/lib/email'
-import { scanInboxFolder } from '@/lib/drive-inbox'
-import { Readable } from 'stream'
+import { runUserSync } from '@/lib/sync-runner'
+
+/**
+ * Automated sync sweep.
+ *
+ * This route used to reimplement the entire ingestion pipeline inline —
+ * hashing, Drive upload, webhook classification and the insert — rather than
+ * reusing lib/ingestion.ts. The two copies drifted: this one never called
+ * checkAutoDecision, so auto-reject rules simply did not apply to automated
+ * syncs, and every classification change had to be made twice.
+ *
+ * It now does only what is genuinely cron-specific — deciding who is due and
+ * recording the outcome — and delegates the document work to runUserSync, the
+ * same function /api/sync calls.
+ */
+
+/** Paid tier syncs every 15 minutes; free tier falls back to its stored frequency. */
+const PAID_TIER_SYNC_MINUTES = 15
+const DEFAULT_FREE_TIER_SYNC_MINUTES = 720
+
+function createServiceClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    }
+  )
+}
+
+function isDueForSync(settings: any, now: Date): boolean {
+  if (!settings.last_auto_sync_at) return true
+
+  const minutesSinceLastSync =
+    (now.getTime() - new Date(settings.last_auto_sync_at).getTime()) / (1000 * 60)
+
+  // subscription_tier is the source of truth; sync_frequency_minutes is a
+  // denormalised copy maintained by a trigger and only used as a fallback.
+  const syncFrequency =
+    settings.subscription_tier === 'paid'
+      ? PAID_TIER_SYNC_MINUTES
+      : settings.sync_frequency_minutes || DEFAULT_FREE_TIER_SYNC_MINUTES
+
+  return minutesSinceLastSync >= syncFrequency
+}
+
+/**
+ * Resolve the address for the "new documents" notification.
+ *
+ * Falls back to the profile email. The previous implementation read
+ * auth.users via supabase.auth.admin.getUserById, which no longer holds this
+ * app's accounts now that login is backed by profiles + app_credentials.
+ */
+async function resolveNotificationEmail(
+  supabase: ReturnType<typeof createServiceClient>,
+  userId: string,
+  settings: any
+): Promise<string | null> {
+  const configured = settings.notification_email?.trim()
+  if (configured) return configured
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('email')
+    .eq('id', userId)
+    .maybeSingle()
+
+  return (profile as any)?.email ?? null
+}
 
 /**
  * Shared sync logic used by both GET (Vercel cron) and POST (manual trigger)
  */
 async function runCronSync(startTime: number) {
   try {
-    // Create Supabase admin client (bypasses RLS)
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
-        },
-      }
-    )
+    // Service-role client: this sweep legitimately spans every user, and each
+    // query below is explicitly scoped to the user being processed.
+    const supabase = createServiceClient()
 
-    // Get all users who have auto-sync enabled
     const { data: allSettings, error: settingsError } = await supabase
       .from('user_settings')
       .select('*')
@@ -56,23 +107,8 @@ async function runCronSync(startTime: number) {
       })
     }
 
-    // Filter users who are due for a sync based on their frequency
     const now = new Date()
-    const usersToSync = allSettings.filter((settings) => {
-      if (!settings.last_auto_sync_at) {
-        // Never synced before, sync now
-        return true
-      }
-
-      const lastSync = new Date(settings.last_auto_sync_at)
-      const minutesSinceLastSync = (now.getTime() - lastSync.getTime()) / (1000 * 60)
-      // Derive frequency from subscription_tier (source of truth), fall back to sync_frequency_minutes
-      const syncFrequency = settings.subscription_tier === 'paid'
-        ? 15
-        : (settings.sync_frequency_minutes || 720)
-
-      return minutesSinceLastSync >= syncFrequency
-    })
+    const usersToSync = (allSettings as any[]).filter((settings) => isDueForSync(settings, now))
 
     if (usersToSync.length === 0) {
       return NextResponse.json({
@@ -88,51 +124,52 @@ async function runCronSync(startTime: number) {
     let totalDocumentsFound = 0
     let totalDuplicatesSkipped = 0
 
-    // Process each user who is due for sync
     for (const userSettings of usersToSync) {
       const userStartTime = Date.now()
+      const userId = userSettings.user_id
 
       try {
-        // Get Gmail account for this user
         const { data: gmailAccount, error: gmailError } = await supabase
           .from('gmail_accounts')
           .select('*')
-          .eq('user_id', userSettings.user_id)
-          .single()
+          .eq('user_id', userId)
+          .maybeSingle()
 
         if (gmailError || !gmailAccount) {
           results.push({
-            userId: userSettings.user_id,
+            userId,
             error: 'No Gmail account found',
             duration_ms: Date.now() - userStartTime,
           })
           continue
         }
 
-        // Get valid access token (refresh if needed)
+        const account = gmailAccount as any
+
         const tokenResult = await getValidAccessToken(
-          gmailAccount.access_token,
-          gmailAccount.refresh_token,
-          gmailAccount.token_expiry
+          account.access_token,
+          account.refresh_token,
+          account.token_expiry
         )
 
-        // Update token if refreshed
         if (tokenResult.needsUpdate && tokenResult.newExpiry) {
           await supabase
             .from('gmail_accounts')
+            // @ts-ignore - Supabase row types infer as never across this project
             .update({
               access_token: tokenResult.accessToken,
               token_expiry: tokenResult.newExpiry,
             })
-            .eq('id', gmailAccount.id)
+            .eq('id', account.id)
+            .eq('user_id', userId)
         }
 
-        // Create sync job record
         const { data: syncJob } = await supabase
           .from('sync_jobs')
+          // @ts-ignore - Supabase row types infer as never across this project
           .insert({
-            user_id: userSettings.user_id,
-            gmail_account_id: gmailAccount.id,
+            user_id: userId,
+            gmail_account_id: account.id,
             status: 'running',
             sync_from_date: new Date(
               Date.now() - userSettings.sync_days_back * 24 * 60 * 60 * 1000
@@ -144,241 +181,57 @@ async function runCronSync(startTime: number) {
 
         if (!syncJob) {
           results.push({
-            userId: userSettings.user_id,
+            userId,
             error: 'Failed to create sync job',
             duration_ms: Date.now() - userStartTime,
           })
           continue
         }
 
-        // Get or create Gmail label if configured
-        let gmailLabelId: string | null = null
-        if (userSettings.gmail_sync_label && userSettings.gmail_sync_label.trim()) {
-          try {
-            const gmail = await getGmailClient(tokenResult.accessToken)
-            gmailLabelId = await getOrCreateLabel(gmail, userSettings.gmail_sync_label)
-          } catch (error) {
-            console.error(`Failed to get/create Gmail label for user ${userSettings.user_id}:`, error)
-          }
-        }
+        // The one and only ingestion pipeline — identical to /api/sync.
+        const { emailsScanned, documentsFound, duplicatesSkipped, newDocuments } =
+          await runUserSync({
+            supabase,
+            user: { id: userId },
+            settings: userSettings,
+            gmailAccount: account,
+            providerToken: tokenResult.accessToken,
+          })
 
-        // Scan Gmail for invoices
-        const { attachments } = await scanGmailForInvoices(
-          tokenResult.accessToken,
-          userSettings.sync_days_back
-        )
-
-        let documentsFound = 0
-        let duplicatesSkipped = 0
-        const newDocuments = []
-
-        // Process each attachment
-        for (const attachment of attachments) {
-          try {
-            const fileHash = calculateFileHash(attachment.data)
-
-            // Check for duplicates
-            const { data: existingDoc } = await supabase
-              .from('documents')
-              .select('id')
-              .eq('user_id', userSettings.user_id)
-              .eq('file_hash', fileHash)
-              .single()
-
-            if (existingDoc) {
-              duplicatesSkipped++
-              continue
-            }
-
-            // Upload to Google Drive
-            const drive = await getDriveClient(tokenResult.accessToken)
-
-            // Find or create Pending Approval folder
-            const foldersResponse = await drive.files.list({
-              q: `name='Pending Approval' and '${userSettings.drive_folder_id}' in parents and trashed=false`,
-              fields: 'files(id, name)',
-            })
-
-            let pendingFolderId = foldersResponse.data.files?.[0]?.id
-
-            if (!pendingFolderId) {
-              const folderResponse = await drive.files.create({
-                requestBody: {
-                  name: 'Pending Approval',
-                  mimeType: 'application/vnd.google-apps.folder',
-                  parents: [userSettings.drive_folder_id],
-                },
-                fields: 'id',
-              })
-              pendingFolderId = folderResponse.data.id!
-            }
-
-            // Upload file to Drive
-            const stream = new Readable()
-            stream.push(attachment.data)
-            stream.push(null)
-
-            const fileResponse = await drive.files.create({
-              requestBody: {
-                name: attachment.filename,
-                parents: [pendingFolderId],
-              },
-              media: {
-                mimeType: attachment.mimeType,
-                body: stream,
-              },
-              fields: 'id, webViewLink',
-            })
-
-            // Process with webhook if configured
-            let webhookData = null
-            let webhookError = null
-            let classification: 'invoice' | 'credit_note' | 'unclassified' = 'unclassified'
-
-            const effectiveWebhookUrl = userSettings.webhook_url?.trim() || process.env.WEBHOOK_URL?.trim()
-
-            if (effectiveWebhookUrl) {
-              try {
-                const response = await sendPdfToWebhook(
-                  attachment.data,
-                  attachment.filename,
-                  effectiveWebhookUrl
-                )
-                webhookData = response
-
-                // Map webhook document_type to classification
-                if (response.document_type === 'supplier_invoice') {
-                  classification = 'invoice'
-                } else if (response.document_type === 'credit_note') {
-                  classification = 'credit_note'
-                } else {
-                  // Skip documents that are not invoices or credit notes (e.g., bank statements)
-                  console.log(`[Cron Sync] Skipping document type "${response.document_type}" - not an invoice or credit note`)
-                  if (fileResponse.data.id) {
-                    await drive.files.delete({ fileId: fileResponse.data.id })
-                  }
-                  continue
-                }
-              } catch (error) {
-                webhookError = error instanceof Error ? error.message : 'Unknown webhook error'
-              }
-            }
-
-            // Skip if no webhook configured and can't classify (optional: you might want to save these)
-            // For now, only save if we have a valid classification from webhook
-            if (!webhookData && effectiveWebhookUrl) {
-              // Webhook was configured but failed - skip this document
-              console.log(`[Cron Sync] Skipping document - webhook failed and cannot classify`)
-              if (fileResponse.data.id) {
-                await drive.files.delete({ fileId: fileResponse.data.id })
-              }
-              continue
-            }
-
-            // Save document to database
-            const { data: newDoc, error: insertError } = await supabase
-              .from('documents')
-              .insert({
-                user_id: userSettings.user_id,
-                gmail_account_id: gmailAccount.id,
-                email_message_id: attachment.messageId,
-                file_hash: fileHash,
-                subject: attachment.subject,
-                sender: attachment.sender,
-                sender_domain: attachment.senderDomain,
-                received_date: attachment.receivedDate.toISOString(),
-                filename: attachment.filename,
-                original_classification: classification,
-                final_classification: classification,
-                confidence_score: webhookData ? 1.0 : 0.5,
-                status: 'pending',
-                drive_file_id: fileResponse.data.id,
-                drive_folder_path: 'Pending Approval',
-                // Webhook data fields
-                invoice_number: webhookData?.invoice_number || null,
-                issue_date: webhookData?.issue_date || null,
-                supplier_name: webhookData?.supplier_name || null,
-                supplier_vat_number: webhookData?.supplier_vat_number || null,
-                total_without_vat: webhookData?.total_without_vat
-                  ? parseFloat(webhookData.total_without_vat)
-                  : null,
-                total_vat: webhookData?.total_vat ? parseFloat(webhookData.total_vat) : null,
-                invoice_total: webhookData?.invoice_total
-                  ? parseFloat(webhookData.invoice_total)
-                  : null,
-                currency: webhookData?.currency || null,
-                numb_pages: webhookData?.numb_pages || null,
-                document_type: webhookData?.document_type || null,
-                webhook_processed_at: webhookData ? new Date().toISOString() : null,
-                webhook_error: webhookError,
-              })
-              .select()
-              .single()
-
-            if (!insertError && newDoc) {
-              documentsFound++
-              newDocuments.push(newDoc)
-
-              // Apply Gmail label
-              if (gmailLabelId) {
-                try {
-                  const gmail = await getGmailClient(tokenResult.accessToken)
-                  await applyLabelToMessage(gmail, attachment.messageId, gmailLabelId)
-                } catch (error) {
-                  console.error(`Failed to apply label to message ${attachment.messageId}:`, error)
-                }
-              }
-
-              // Archive email if enabled
-              if (userSettings.archive_synced_emails) {
-                try {
-                  const gmail = await getGmailClient(tokenResult.accessToken)
-                  await archiveMessage(gmail, attachment.messageId)
-                } catch (error) {
-                  console.error(`Failed to archive message ${attachment.messageId}:`, error)
-                }
-              }
-            }
-          } catch (error) {
-            console.error(`Error processing attachment for user ${userSettings.user_id}:`, error)
-            continue
-          }
-        }
-
-        // Update sync job status
         await supabase
           .from('sync_jobs')
+          // @ts-ignore - Supabase row types infer as never across this project
           .update({
             status: 'completed',
-            emails_scanned: attachments.length,
+            emails_scanned: emailsScanned,
             documents_found: documentsFound,
             duplicates_skipped: duplicatesSkipped,
             completed_at: new Date().toISOString(),
           })
-          .eq('id', syncJob.id)
+          .eq('id', (syncJob as any).id)
+          .eq('user_id', userId)
 
-        // Update last auto sync time
         await supabase
           .from('user_settings')
-          .update({
-            last_auto_sync_at: new Date().toISOString(),
-          })
-          .eq('user_id', userSettings.user_id)
+          // @ts-ignore - Supabase row types infer as never across this project
+          .update({ last_auto_sync_at: new Date().toISOString() })
+          .eq('user_id', userId)
 
-        // Send email notification if enabled and new documents found
+        let emailSent = false
         if (userSettings.email_notifications_enabled && newDocuments.length > 0) {
           try {
-            const { data: userData } = await supabase.auth.admin.getUserById(userSettings.user_id)
+            const targetEmail = await resolveNotificationEmail(supabase, userId, userSettings)
 
-            if (userData?.user?.email) {
+            if (targetEmail) {
               await sendNewDocumentsEmail(
-                userSettings.notification_email || userData.user.email,
+                targetEmail,
                 newDocuments,
                 userSettings.drive_folder_id
               )
+              emailSent = true
             }
           } catch (error) {
-            console.error(`Failed to send notification email for user ${userSettings.user_id}:`, error)
+            console.error(`Failed to send notification email for user ${userId}:`, error)
           }
         }
 
@@ -386,172 +239,18 @@ async function runCronSync(startTime: number) {
         totalDuplicatesSkipped += duplicatesSkipped
 
         results.push({
-          userId: userSettings.user_id,
+          userId,
           tier: userSettings.subscription_tier || 'free',
           documentsFound,
           duplicatesSkipped,
-          emailSent: userSettings.email_notifications_enabled && newDocuments.length > 0,
+          emailSent,
           duration_ms: Date.now() - userStartTime,
         })
-
-        // --- INBOX FOLDER SYNC ---
-        if (userSettings.inbox_folder_enabled && userSettings.inbox_folder_id) {
-          try {
-            const lastSyncDate = userSettings.last_inbox_sync_at ? new Date(userSettings.last_inbox_sync_at) : undefined
-
-            const { documents: inboxDocs } = await scanInboxFolder(
-              tokenResult.accessToken,
-              userSettings.inbox_folder_id,
-              lastSyncDate
-            )
-
-            let inboxDocsProcessed = 0
-
-            if (inboxDocs.length > 0) {
-              const drive = await getDriveClient(tokenResult.accessToken)
-
-              // Ensure Pending Approval folder exists (reuse logic or find again)
-              // We'll quickly find/create it to be safe
-              const getPendingFolderId = async () => {
-                const foldersResponse = await drive.files.list({
-                  q: `name='Pending Approval' and '${userSettings.drive_folder_id}' in parents and trashed=false`,
-                  fields: 'files(id, name)',
-                })
-                if (foldersResponse.data.files?.[0]?.id) return foldersResponse.data.files[0].id
-
-                const folderResponse = await drive.files.create({
-                  requestBody: {
-                    name: 'Pending Approval',
-                    mimeType: 'application/vnd.google-apps.folder',
-                    parents: [userSettings.drive_folder_id!],
-                  },
-                  fields: 'id',
-                })
-                return folderResponse.data.id!
-              }
-
-              const pendingFolderId = await getPendingFolderId()
-
-              // Process inbox documents
-              for (const doc of inboxDocs) {
-                try {
-                  // Check duplicates
-                  const { data: existingDoc } = await supabase
-                    .from('documents')
-                    .select('id')
-                    .eq('user_id', userSettings.user_id)
-                    .eq('file_hash', doc.fileHash)
-                    .single()
-
-                  if (existingDoc) {
-                    duplicatesSkipped++
-                    continue
-                  }
-
-                  // Copy to Pending Approval
-                  const copiedFile = await drive.files.copy({
-                    fileId: doc.driveFileId,
-                    requestBody: { name: doc.filename, parents: [pendingFolderId] },
-                    fields: 'id',
-                  })
-                  const driveFileId = copiedFile.data.id!
-
-                  // Webhook & Classification
-                  let webhookData = null
-                  let webhookError = null
-                  let classification: 'invoice' | 'credit_note' | 'unclassified' = 'unclassified'
-
-                  const effectiveWebhookUrl = userSettings.webhook_url?.trim() || process.env.WEBHOOK_URL?.trim()
-
-                  if (effectiveWebhookUrl) {
-                    try {
-                      const response = await sendPdfToWebhook(
-                        doc.data,
-                        doc.filename,
-                        effectiveWebhookUrl
-                      )
-                      webhookData = response
-
-                      if (response.document_type === 'supplier_invoice') {
-                        classification = 'invoice'
-                      } else if (response.document_type === 'credit_note') {
-                        classification = 'credit_note'
-                      } else {
-                        // Skip if not invoice/credit note
-                        await drive.files.delete({ fileId: driveFileId })
-                        continue
-                      }
-                    } catch (error) {
-                      webhookError = error instanceof Error ? error.message : 'Unknown webhook error'
-                      // If webhook required, skip and cleanup
-                      await drive.files.delete({ fileId: driveFileId })
-                      continue
-                    }
-                  } else {
-                    // No webhook -> skip
-                    await drive.files.delete({ fileId: driveFileId })
-                    continue
-                  }
-
-                  // Save to DB
-                  const { error: insertError } = await supabase.from('documents').insert({
-                    user_id: userSettings.user_id,
-                    gmail_account_id: gmailAccount.id,
-                    email_message_id: `drive_inbox_${doc.driveFileId}`,
-                    file_hash: doc.fileHash,
-                    subject: `File from Inbox: ${doc.filename}`,
-                    sender: 'Inbox folder',
-                    sender_domain: 'drive.google.com',
-                    received_date: doc.createdDate.toISOString(),
-                    filename: doc.filename,
-                    original_classification: classification,
-                    final_classification: classification,
-                    confidence_score: webhookData ? 1.0 : 0.5,
-                    status: 'pending',
-                    drive_file_id: driveFileId,
-                    drive_folder_path: 'Pending Approval',
-                    source: 'inbox_folder',
-                    inbox_file_id: doc.driveFileId,
-                    invoice_number: webhookData?.invoice_number || null,
-                    issue_date: webhookData?.issue_date || null,
-                    supplier_name: webhookData?.supplier_name || null,
-                    supplier_vat_number: webhookData?.supplier_vat_number || null,
-                    total_without_vat: webhookData?.total_without_vat ? parseFloat(webhookData.total_without_vat) : null,
-                    total_vat: webhookData?.total_vat ? parseFloat(webhookData.total_vat) : null,
-                    invoice_total: webhookData?.invoice_total ? parseFloat(webhookData.invoice_total) : null,
-                    currency: webhookData?.currency || null,
-                    numb_pages: webhookData?.numb_pages || null,
-                    document_type: webhookData?.document_type || null,
-                    webhook_processed_at: webhookData ? new Date().toISOString() : null,
-                    webhook_error: webhookError,
-                  })
-
-                  if (!insertError) {
-                    documentsFound++
-                    inboxDocsProcessed++
-                    totalDocumentsFound++ // Update global counter for report
-                  }
-
-                } catch (err) {
-                  console.error(`Error processing inbox file for user ${userSettings.user_id}:`, err)
-                }
-              }
-
-              if (inboxDocsProcessed > 0) {
-                await supabase
-                  .from('user_settings')
-                  .update({ last_inbox_sync_at: new Date().toISOString() })
-                  .eq('user_id', userSettings.user_id)
-              }
-            }
-          } catch (inboxErr) {
-            console.error(`Inbox sync failed for user ${userSettings.user_id}:`, inboxErr)
-          }
-        }
       } catch (error) {
-        console.error(`Error syncing user ${userSettings.user_id}:`, error)
+        // One user's failure must never abort the sweep for everyone else.
+        console.error(`Error syncing user ${userId}:`, error)
         results.push({
-          userId: userSettings.user_id,
+          userId,
           error: error instanceof Error ? error.message : 'Unknown error',
           duration_ms: Date.now() - userStartTime,
         })
@@ -625,13 +324,11 @@ export async function GET(request: Request) {
   const startTime = Date.now()
 
   try {
-    // Verify cron secret with secure comparison
     const authHeader = request.headers.get('authorization')
     if (!validateCronSecret(authHeader)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Run the sync logic
     return await runCronSync(startTime)
   } catch (error) {
     console.error('Cron sync (GET) failed:', error)
@@ -654,13 +351,11 @@ export async function POST(request: Request) {
   const startTime = Date.now()
 
   try {
-    // Verify cron secret with secure comparison
     const authHeader = request.headers.get('authorization')
     if (!validateCronSecret(authHeader)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Run the sync logic
     return await runCronSync(startTime)
   } catch (error) {
     console.error('Cron sync (POST) failed:', error)

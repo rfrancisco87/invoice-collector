@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireApiUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
+import { scoped } from '@/lib/supabase/scoped'
 
 export async function POST(request: Request) {
   try {
@@ -10,6 +11,7 @@ export async function POST(request: Request) {
     }
 
     const supabase = await createClient()
+    const db = scoped(supabase, user.id)
 
     const body = await request.json()
     const { documentId, classification } = body
@@ -22,12 +24,9 @@ export async function POST(request: Request) {
     }
 
     // Get document
-    // @ts-ignore - TypeScript has issues with Supabase types
-    const { data: document, error: docError } = await supabase
-      .from('documents')
-      .select('*')
+    const { data: document, error: docError } = await db
+      .select('documents')
       .eq('id', documentId)
-      .eq('user_id', user.id)
       .maybeSingle()
 
     if (docError || !document) {
@@ -35,26 +34,19 @@ export async function POST(request: Request) {
     }
 
     // Update classification
-    // @ts-ignore
-    await supabase
-      .from('documents')
-      // @ts-ignore
-      .update({
+    await db
+      .update('documents', {
         final_classification: classification,
         was_reclassified: true,
       })
       .eq('id', documentId)
 
     // Record feedback
-    // @ts-ignore
-    await supabase.from('user_feedback').insert({
-      user_id: user.id,
+    await db.insert('user_feedback', {
       document_id: documentId,
       action: 'reclassified' as const,
-      // @ts-ignore
       original_classification: document.original_classification,
       new_classification: classification,
-      // @ts-ignore
       sender_domain: document.sender_domain,
     })
 

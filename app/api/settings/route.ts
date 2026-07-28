@@ -72,6 +72,13 @@ export async function PATCH(request: Request) {
       approved_folder_mode,
       approved_filename_template,
       webhook_url,
+      prefilter_enabled,
+      classification_confidence_threshold,
+      duplicate_pair_default,
+      auto_reject_enabled,
+      auto_approve_enabled,
+      classifier_backend,
+      classifier_model,
     } = body
 
     console.log('DEBUG: Settings PATCH received:', JSON.stringify(body, null, 2))
@@ -90,6 +97,70 @@ export async function PATCH(request: Request) {
     if (archive_synced_emails !== undefined) updates.archive_synced_emails = archive_synced_emails
     if (webhook_url !== undefined) updates.webhook_url = webhook_url || null
     if (enabled_sources !== undefined) updates.enabled_sources = enabled_sources
+
+    // Classification tuning. Values are validated here rather than relying on
+    // the CHECK constraints, so a bad input returns a useful 400 instead of a
+    // database error.
+    if (prefilter_enabled !== undefined) updates.prefilter_enabled = !!prefilter_enabled
+
+    if (classification_confidence_threshold !== undefined) {
+      const threshold = Number(classification_confidence_threshold)
+      if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
+        return NextResponse.json(
+          { error: 'O limite de confiança deve estar entre 0 e 1.' },
+          { status: 400 }
+        )
+      }
+      updates.classification_confidence_threshold = threshold
+    }
+
+    if (duplicate_pair_default !== undefined) {
+      if (!['ask', 'invoice', 'receipt', 'both'].includes(duplicate_pair_default)) {
+        return NextResponse.json(
+          { error: 'Valor inválido para duplicados fatura/recibo.' },
+          { status: 400 }
+        )
+      }
+      updates.duplicate_pair_default = duplicate_pair_default
+    }
+
+    // These have existed since the auto-decision feature but were never exposed
+    // through this route, so the UI could not change them.
+    if (auto_reject_enabled !== undefined) updates.auto_reject_enabled = !!auto_reject_enabled
+    if (auto_approve_enabled !== undefined) updates.auto_approve_enabled = !!auto_approve_enabled
+
+    if (classifier_backend !== undefined) {
+      if (!['webhook', 'anthropic', 'openai'].includes(classifier_backend)) {
+        return NextResponse.json({ error: 'Backend de classificação inválido.' }, { status: 400 })
+      }
+
+      // Selecting a provider with no stored key would leave classification
+      // silently falling back to the webhook, so refuse the change instead.
+      if (classifier_backend !== 'webhook') {
+        const { data: key } = await supabase
+          .from('user_api_keys')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('provider', classifier_backend)
+          .maybeSingle()
+
+        if (!key) {
+          return NextResponse.json(
+            { error: 'Adicione uma chave de API para este fornecedor antes de o selecionar.' },
+            { status: 400 }
+          )
+        }
+      }
+
+      updates.classifier_backend = classifier_backend
+    }
+
+    if (classifier_model !== undefined) {
+      updates.classifier_model =
+        typeof classifier_model === 'string' && classifier_model.trim()
+          ? classifier_model.trim()
+          : null
+    }
 
     // Drive settings
     if (drive_folder_id !== undefined) updates.drive_folder_id = drive_folder_id
@@ -180,6 +251,7 @@ export async function PATCH(request: Request) {
                 token_expiry: tokenResult.newExpiry,
               })
               .eq('id', gmailAccount.id)
+              .eq('user_id', user.id)
           }
 
           // Handle Inbox Folder Logic

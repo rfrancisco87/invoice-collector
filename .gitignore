@@ -2,10 +2,9 @@
 # CRITICAL: ENVIRONMENT VARIABLES
 # ===================================
 # NEVER COMMIT API KEYS OR SECRETS
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env
+.env.*
+!.env.example
 
 # Keep these for reference (no secrets)
 # !.env.example
@@ -33,10 +32,14 @@
 # PRODUCTION
 # ===================================
 /build
-/docs
-/supabase
-/scripts
 
+# supabase/, scripts/ and docs/ are source, not build output — they were
+# ignored here, which silently kept migrations 016-022, every maintenance
+# script and the technical documentation out of the repository. The schema
+# could not be rebuilt from a clone.
+# Only the Supabase CLI's local state is genuinely disposable:
+supabase/.temp
+supabase/.branches
 # ===================================
 # MISC
 # ===================================

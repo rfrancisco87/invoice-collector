@@ -1,12 +1,8 @@
 
-const { createClient } = require('@supabase/supabase-js');
-
-// Config from .env.local
-const SUPABASE_URL = 'https://dygkgeqizcgxqzljqphr.supabase.co';
-const SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR5Z2tnZXFpemNneHF6bGpxcGhyIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2ODMzMDA4NSwiZXhwIjoyMDgzOTA2MDg1fQ.qjeEMWzTGsFx5_e4aMMIGkQLY8RRaVipx5AyNVAh27k';
+const { adminClient } = require('./_supabase');
 
 async function main() {
-    const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
+    const supabase = adminClient();
 
     console.log('Checking documents...');
     // Order by processed_at as created_at does not exist on this table

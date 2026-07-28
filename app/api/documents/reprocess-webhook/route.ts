@@ -60,6 +60,7 @@ export async function POST(request: Request) {
       .from('gmail_accounts')
       .select('*')
       .eq('id', document.gmail_account_id)
+      .eq('user_id', user.id)
       .single()
 
     if (!gmailAccount) {
@@ -154,6 +155,7 @@ export async function POST(request: Request) {
         webhook_error: webhookError,
       })
       .eq('id', documentId)
+      .eq('user_id', user.id)
 
     if (updateError) {
       return NextResponse.json(

@@ -1,16 +1,10 @@
 
-const { createClient } = require('@supabase/supabase-js');
 const { nanoid } = require('nanoid');
-
-// Config from .env.local
-const SUPABASE_URL = 'https://dygkgeqizcgxqzljqphr.supabase.co';
-const SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR5Z2tnZXFpemNneHF6bGpxcGhyIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2ODMzMDA4NSwiZXhwIjoyMDgzOTA2MDg1fQ.qjeEMWzTGsFx5_e4aMMIGkQLY8RRaVipx5AyNVAh27k';
+const { adminClient } = require('./_supabase');
 
 async function main() {
     console.log('Initializing admin client...');
-    const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
-        auth: { persistSession: false, autoRefreshToken: false }
-    });
+    const supabase = adminClient();
 
     const { data: { users }, error: userError } = await supabase.auth.admin.listUsers();
     if (userError) {
