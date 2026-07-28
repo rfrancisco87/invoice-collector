@@ -65,7 +65,7 @@ export function StepSources({
                     />
                 </div>
 
-                {/* Email Forwarding */}
+                {/* Email Forwarding - hidden until the feature is ready
                 <div className="flex items-center justify-between space-x-4 rounded-lg border p-4">
                     <div className="flex items-center space-x-4">
                         <div className="h-10 w-10 flex items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/20">
@@ -83,6 +83,7 @@ export function StepSources({
                         onCheckedChange={() => toggleSource('forwarding')}
                     />
                 </div>
+                */}
 
             </CardContent>
             <CardFooter className="flex justify-end">

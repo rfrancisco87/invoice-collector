@@ -85,19 +85,62 @@ In Google Cloud Console:
 
 ### 3. Database
 
-Run the migrations in `supabase/migrations/` **in filename order** using the
-Supabase SQL editor. For a fresh project start with `supabase-schema.sql`, then
-the numbered files.
+#### Fresh install
 
-Check what is applied at any time:
+1. Create a new Supabase project. Note the project URL and both API keys from
+   **Project Settings → API**.
+2. Generate the consolidated schema:
+
+   ```bash
+   npx tsx scripts/build-schema.ts
+   ```
+
+   This writes `supabase/schema.sql` — every migration concatenated in
+   execution order.
+3. Open **SQL Editor** in the Supabase dashboard, paste the whole file, run it.
+4. Verify:
+
+   ```bash
+   npx tsx scripts/check-migrations.ts
+   ```
+
+   It should print `All migrations applied.`
+
+> **`supabase/schema.sql` is for empty projects only.** Its first section drops
+> the core tables before recreating them. Never run it against a database
+> holding real data.
+
+#### Why not just run the directory in order
+
+Don't. `supabase/migrations/` is not a clean migration set:
+
+- **Filename order is not execution order.**
+  `20240204_multisource_schema.sql` sorts after `018` but must run before it,
+  and `database/app-auth.sql` depends on the `profiles` table from `010`.
+- **The SQL lives in two directories.** `database/app-auth.sql` creates
+  `app_credentials`, which holds the password hashes — miss it and nobody can
+  log in.
+- **Six files are not migrations.** Three of them —
+  `cleanup-database.sql`, `cleanup_db.sql`, `force-cleanup.sql` — delete data.
+  Running the directory alphabetically wipes the database halfway through
+  setup.
+
+`scripts/build-schema.ts` encodes the correct order and excludes those files.
+It also fails if a new `.sql` file appears that is neither ordered nor
+explicitly excluded, so the ordering cannot silently rot.
+
+#### Updating an existing database
+
+Do **not** use `schema.sql`. Run only the migrations you are missing:
 
 ```bash
 npx tsx scripts/check-migrations.ts
 ```
 
-It names the missing tables and columns and which file supplies them. Run it
-first whenever something fails oddly — a missing migration usually surfaces as
-an opaque 500 rather than anything that names the cause.
+It names the missing tables and columns and which file supplies them. Apply
+those files individually in the SQL editor. Run this first whenever something
+fails oddly — a missing migration usually surfaces as an opaque 500 rather than
+anything naming the cause.
 
 ### 4. Create the first admin
 
@@ -174,6 +217,7 @@ hours, paid every 15 minutes.
 
 | Script | Purpose |
 |---|---|
+| `build-schema.ts` | Concatenate all SQL into `supabase/schema.sql` in execution order, for fresh installs |
 | `check-migrations.ts` | Which migrations are applied, and what is missing |
 | `create-admin.ts` | Create or promote an admin account |
 | `audit-tenant-scoping.ts` | Fails if any query on a user-owned table lacks an owner filter |

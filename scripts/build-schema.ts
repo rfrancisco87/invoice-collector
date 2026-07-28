@@ -1,0 +1,164 @@
+/**
+ * Concatenate the schema into a single file for a fresh install.
+ *
+ * Setting this project up by hand is a trap:
+ *
+ *   * The SQL lives in two directories — supabase/migrations/ and database/ —
+ *     and the second creates app_credentials, without which nobody can log in.
+ *   * Filename order is not execution order. 20240204_multisource_schema.sql
+ *     sorts after 018 but must run before it, and app-auth.sql depends on the
+ *     profiles table created by migration 010.
+ *   * Six files in supabase/migrations/ are not migrations at all. Three of
+ *     them (cleanup-database.sql, cleanup_db.sql, force-cleanup.sql) delete
+ *     data. Running the directory in alphabetical order wipes the database
+ *     halfway through setup.
+ *
+ * This emits one ordered file to paste into the Supabase SQL editor.
+ *
+ * Usage:
+ *   npx tsx scripts/build-schema.ts            # writes supabase/schema.sql
+ *   npx tsx scripts/build-schema.ts --stdout   # print instead
+ */
+
+const fs = require('fs')
+const path = require('path')
+
+const repoRoot = path.resolve(__dirname, '..')
+
+/**
+ * Execution order. Explicit rather than derived, because the correct order
+ * cannot be recovered from the filenames.
+ */
+const ORDER: string[] = [
+    // Base tables, types, indexes and RLS policies. Contains DROP TABLE — it is
+    // a clean-slate file and must only ever run on an empty project.
+    'supabase/migrations/supabase-schema.sql',
+
+    'supabase/migrations/003_add_notifications.sql',
+    'supabase/migrations/004_add_webhook_url.sql',
+    'supabase/migrations/005_add_invoice_fields.sql',
+    'supabase/migrations/006_fix_existing_classifications.sql',
+    'supabase/migrations/007_mark_failed_webhooks_for_reprocessing.sql',
+    'supabase/migrations/008_add_gmail_label_setting.sql',
+    'supabase/migrations/009_add_subscription_tier.sql',
+    // Creates profiles + the handle_new_user() trigger. Everything below that
+    // touches profiles depends on this.
+    'supabase/migrations/010_add_profiles_and_roles.sql',
+    'supabase/migrations/011_admin_rls_policies.sql',
+    'supabase/migrations/012_add_archive_synced_emails.sql',
+    // Creates the cron views that 20260204 later locks down.
+    'supabase/migrations/013_supabase_cron_sync.sql',
+    'supabase/migrations/013b_update_cron_config.sql',
+    'supabase/migrations/014_add_onboarding.sql',
+    'supabase/migrations/015_add_inbox_folder.sql',
+
+    // Sorts after 018 by filename but belongs here: it relaxes the documents
+    // unique constraint that later features rely on.
+    'supabase/migrations/20240204_multisource_schema.sql',
+
+    // Lives outside supabase/migrations/ but is not optional — app_credentials
+    // holds the password hashes the login route checks.
+    'database/app-auth.sql',
+    'database/approved-filename-template.sql',
+    'database/inbox-folder-mode.sql',
+
+    'supabase/migrations/016_enable_rls_app_credentials.sql',
+    'supabase/migrations/017_add_auto_decision.sql',
+    'supabase/migrations/018_rename_drive_upload_sender.sql',
+    'supabase/migrations/019_multi_user_accounts.sql',
+    'supabase/migrations/020_classification_metadata.sql',
+    'supabase/migrations/021_sibling_documents.sql',
+    'supabase/migrations/022_user_api_keys.sql',
+    'supabase/migrations/023_llm_classification.sql',
+    'supabase/migrations/024_classification_rules.sql',
+
+    // Depends on the views created by 013.
+    'supabase/migrations/20260204_secure_cron_views.sql',
+]
+
+/**
+ * Files in supabase/migrations/ that are NOT part of setup, with the reason.
+ * Listed explicitly so a new file added to that directory shows up as
+ * unaccounted for rather than being silently skipped.
+ */
+const NOT_MIGRATIONS: Record<string, string> = {
+    'apply-migrations.sql': 'notes, not runnable SQL',
+    'check_documents.sql': 'ad-hoc query',
+    'diagnose-database.sql': 'ad-hoc diagnostics',
+    'cleanup-database.sql': 'DESTRUCTIVE — deletes data',
+    'cleanup_db.sql': 'DESTRUCTIVE — deletes data',
+    'force-cleanup.sql': 'DESTRUCTIVE — deletes data',
+}
+
+function main() {
+    const toStdout = process.argv.includes('--stdout')
+
+    // Anything in the migrations directory that is neither ordered nor
+    // explicitly excluded is a mistake waiting to happen.
+    const onDisk: string[] = fs
+        .readdirSync(path.join(repoRoot, 'supabase/migrations'))
+        .filter((f: string) => f.endsWith('.sql'))
+
+    const ordered = new Set(ORDER.map((p) => path.basename(p)))
+    const unaccounted = onDisk.filter((f) => !ordered.has(f) && !(f in NOT_MIGRATIONS))
+
+    if (unaccounted.length > 0) {
+        console.error('Unaccounted-for SQL files in supabase/migrations/:')
+        for (const file of unaccounted) console.error(`  ${file}`)
+        console.error('\nAdd each to ORDER or NOT_MIGRATIONS in scripts/build-schema.ts.')
+        process.exit(1)
+    }
+
+    const sections: string[] = [
+        '-- Invoice Collector — complete schema',
+        '--',
+        '-- Generated by scripts/build-schema.ts. Do not edit by hand; edit the',
+        '-- source migrations and regenerate.',
+        '--',
+        '-- FRESH INSTALLS ONLY. The first section drops the core tables before',
+        '-- recreating them. Running this against a database that holds real data',
+        '-- will destroy it. To update an existing database, apply only the',
+        '-- individual migrations it is missing — run scripts/check-migrations.ts',
+        '-- to see which those are.',
+        '',
+    ]
+
+    for (const relativePath of ORDER) {
+        const absolute = path.join(repoRoot, relativePath)
+
+        if (!fs.existsSync(absolute)) {
+            console.error(`Missing file listed in ORDER: ${relativePath}`)
+            process.exit(1)
+        }
+
+        sections.push(
+            '',
+            '-- ' + '='.repeat(74),
+            `-- ${relativePath}`,
+            '-- ' + '='.repeat(74),
+            '',
+            fs.readFileSync(absolute, 'utf8').trimEnd(),
+        )
+    }
+
+    const output = sections.join('\n') + '\n'
+
+    if (toStdout) {
+        process.stdout.write(output)
+        return
+    }
+
+    const target = path.join(repoRoot, 'supabase/schema.sql')
+    fs.writeFileSync(target, output)
+
+    console.log(`Wrote ${path.relative(repoRoot, target)} (${ORDER.length} files, ${output.split('\n').length} lines)`)
+    console.log('\nPaste it into the Supabase SQL editor of an EMPTY project.')
+    console.log('Then create the first admin:')
+    console.log('  npx tsx scripts/create-admin.ts you@example.com your-long-password')
+    console.log('\nExcluded from the build (never run these as part of setup):')
+    for (const [file, reason] of Object.entries(NOT_MIGRATIONS)) {
+        console.log(`  ${file.padEnd(26)} ${reason}`)
+    }
+}
+
+main()
