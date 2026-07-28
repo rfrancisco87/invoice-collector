@@ -7,7 +7,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "prepare": "git config core.hooksPath .githooks || true",
+    "scan:secrets": "node scripts/scan-secrets.js",
+    "audit:tenant": "npx tsx scripts/audit-tenant-scoping.ts",
+    "verify": "npm run scan:secrets && npm run audit:tenant && npm run type-check"
   },
   "dependencies": {
     "@google-cloud/documentai": "^8.12.0",

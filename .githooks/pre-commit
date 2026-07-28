@@ -1,0 +1,9 @@
+#!/bin/sh
+# Blocks commits that stage a credential. Enable with:
+#   git config core.hooksPath .githooks
+#
+# Bypass with `git commit --no-verify` only when you are certain the match is
+# a public fixture — and then add it to ALLOWED in scripts/scan-secrets.js so
+# the next person does not have to make the same judgement call.
+
+node scripts/scan-secrets.js --staged || exit 1
