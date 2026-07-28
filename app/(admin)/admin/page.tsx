@@ -22,20 +22,47 @@ export default async function AdminPage() {
   }
 
   // Fetch admin stats from view
-  const { data: stats } = await supabase
+  const { data: stats, error: statsError } = await supabase
     .from('admin_stats')
     .select('*')
     .single()
 
   // Fetch recent sync logs
-  const { data: syncLogs } = await supabase
+  const { data: syncLogs, error: logsError } = await supabase
     .from('admin_sync_logs')
     .select('*')
     .order('started_at', { ascending: false })
     .limit(20)
 
+  // Every tile below reads `stats?.x || 0`, which renders a missing or broken
+  // view as a system with no users and no documents. That is indistinguishable
+  // from a real empty install, so a genuine failure looks like normal output.
+  // Surface it instead.
+  const viewError = statsError ?? logsError
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      {viewError && (
+        <div className="mb-6 rounded-lg border border-destructive/30 bg-destructive/10 p-4">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-destructive" />
+            <div className="text-sm">
+              <p className="font-medium text-destructive">
+                Não foi possível ler as estatísticas — os números abaixo não são reais.
+              </p>
+              <p className="mt-1 text-muted-foreground">
+                {viewError.message}
+              </p>
+              <p className="mt-1 text-muted-foreground">
+                Aplique a migração{' '}
+                <code className="font-mono">025_fix_admin_views.sql</code> e verifique com{' '}
+                <code className="font-mono">npx tsx scripts/check-migrations.ts</code>.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Stats Overview */}
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-foreground mb-6">Estatísticas do Sistema</h1>
