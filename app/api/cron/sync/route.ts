@@ -1,9 +1,14 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { timingSafeEqual } from 'crypto'
-import { getValidAccessToken } from '@/lib/token-refresh'
-import { sendNewDocumentsEmail } from '@/lib/email'
+import { getValidGmailAccessToken } from '@/lib/gmail-tokens'
 import { runUserSync } from '@/lib/sync-runner'
+import { notifyPendingDocuments } from '@/lib/notifications'
+
+// One call sweeps every due user. Without this the platform default timeout
+// can kill the function after documents are saved but before the
+// notification email goes out, and those documents are never notified.
+export const maxDuration = 300
 
 /**
  * Automated sync sweep.
@@ -50,30 +55,6 @@ function isDueForSync(settings: any, now: Date): boolean {
       : settings.sync_frequency_minutes || DEFAULT_FREE_TIER_SYNC_MINUTES
 
   return minutesSinceLastSync >= syncFrequency
-}
-
-/**
- * Resolve the address for the "new documents" notification.
- *
- * Falls back to the profile email. The previous implementation read
- * auth.users via supabase.auth.admin.getUserById, which no longer holds this
- * app's accounts now that login is backed by profiles + app_credentials.
- */
-async function resolveNotificationEmail(
-  supabase: ReturnType<typeof createServiceClient>,
-  userId: string,
-  settings: any
-): Promise<string | null> {
-  const configured = settings.notification_email?.trim()
-  if (configured) return configured
-
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('email')
-    .eq('id', userId)
-    .maybeSingle()
-
-  return (profile as any)?.email ?? null
 }
 
 /**
@@ -146,23 +127,9 @@ async function runCronSync(startTime: number) {
 
         const account = gmailAccount as any
 
-        const tokenResult = await getValidAccessToken(
-          account.access_token,
-          account.refresh_token,
-          account.token_expiry
-        )
-
-        if (tokenResult.needsUpdate && tokenResult.newExpiry) {
-          await supabase
-            .from('gmail_accounts')
-            // @ts-ignore - Supabase row types infer as never across this project
-            .update({
-              access_token: tokenResult.accessToken,
-              token_expiry: tokenResult.newExpiry,
-            })
-            .eq('id', account.id)
-            .eq('user_id', userId)
-        }
+        // Stored tokens are encrypted; this decrypts, refreshes if needed and
+        // persists any refreshed token encrypted.
+        const accessToken = await getValidGmailAccessToken(supabase, account)
 
         const { data: syncJob } = await supabase
           .from('sync_jobs')
@@ -195,7 +162,7 @@ async function runCronSync(startTime: number) {
             user: { id: userId },
             settings: userSettings,
             gmailAccount: account,
-            providerToken: tokenResult.accessToken,
+            providerToken: accessToken,
           })
 
         await supabase
@@ -217,23 +184,20 @@ async function runCronSync(startTime: number) {
           .update({ last_auto_sync_at: new Date().toISOString() })
           .eq('user_id', userId)
 
-        let emailSent = false
-        if (userSettings.email_notifications_enabled && newDocuments.length > 0) {
-          try {
-            const targetEmail = await resolveNotificationEmail(supabase, userId, userSettings)
-
-            if (targetEmail) {
-              await sendNewDocumentsEmail(
-                targetEmail,
-                newDocuments,
-                userSettings.drive_folder_id
-              )
-              emailSent = true
-            }
-          } catch (error) {
-            console.error(`Failed to send notification email for user ${userId}:`, error)
-          }
+        // Covers this run's documents plus any an earlier run saved but failed
+        // to notify about (timeout, Resend error).
+        const notification = await notifyPendingDocuments(
+          supabase,
+          userId,
+          userSettings,
+          newDocuments.map((d) => d.id)
+        )
+        if (!notification.sent && notification.count > 0) {
+          console.error(
+            `Notification not sent for user ${userId} (${notification.count} documents): ${notification.reason}`
+          )
         }
+        const emailSent = notification.sent
 
         totalDocumentsFound += documentsFound
         totalDuplicatesSkipped += duplicatesSkipped
@@ -249,6 +213,13 @@ async function runCronSync(startTime: number) {
       } catch (error) {
         // One user's failure must never abort the sweep for everyone else.
         console.error(`Error syncing user ${userId}:`, error)
+
+        // Documents saved before the failure are committed; tell the user
+        // about them now rather than waiting for their next scheduled sync.
+        await notifyPendingDocuments(supabase, userId, userSettings).catch((notifyError) =>
+          console.error(`Notification after failed sync for user ${userId} failed:`, notifyError)
+        )
+
         results.push({
           userId,
           error: error instanceof Error ? error.message : 'Unknown error',

@@ -1,4 +1,4 @@
-import { google } from 'googleapis'
+import { google, type drive_v3 } from 'googleapis'
 import crypto from 'crypto'
 
 export interface InboxDocument {
@@ -60,7 +60,8 @@ export async function scanInboxFolder(
         let pageToken: string | undefined = undefined
 
         do {
-            const response = await drive.files.list({
+            // Annotated: pageToken feeds back into the call, which defeats inference.
+            const response: { data: drive_v3.Schema$FileList } = await drive.files.list({
                 q: query,
                 fields: 'nextPageToken, files(id, name, mimeType, modifiedTime, createdTime)',
                 pageSize: 100,

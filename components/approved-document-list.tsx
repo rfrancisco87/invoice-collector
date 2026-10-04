@@ -15,12 +15,12 @@ import {
 interface Document {
   id: string
   filename: string
-  sender: string
-  sender_domain: string
+  sender: string | null
+  sender_domain: string | null
   subject: string | null
   received_date: string
   final_classification: 'invoice' | 'credit_note' | 'unclassified'
-  confidence_score: number
+  confidence_score: number | null
   drive_file_id: string | null
   drive_folder_path: string | null
   approved_at: string | null
@@ -45,7 +45,7 @@ export function ApprovedDocumentList({ documents }: ApprovedDocumentListProps) {
     return documents.filter(
       doc =>
         doc.filename.toLowerCase().includes(search) ||
-        doc.sender.toLowerCase().includes(search) ||
+        doc.sender?.toLowerCase().includes(search) ||
         (doc.subject?.toLowerCase().includes(search) ?? false) ||
         (doc.supplier_name?.toLowerCase().includes(search) ?? false) ||
         (doc.invoice_number?.toLowerCase().includes(search) ?? false)

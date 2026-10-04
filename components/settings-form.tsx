@@ -81,7 +81,6 @@ export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormPr
     notification_email: settings?.notification_email || userEmail,
     gmail_sync_label: settings?.gmail_sync_label || 'Invoice Collector - Synced',
     archive_synced_emails: settings?.archive_synced_emails ?? false,
-    subscription_tier: settings?.subscription_tier || 'free',
     drive_folder_id: settings?.drive_folder_id || null,
     drive_folder_name: settings?.drive_folder_name || null,
     drive_folder_path: settings?.drive_folder_path || null,
@@ -590,20 +589,16 @@ export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormPr
           </div>
 
           <div className="pt-4 border-t border-border">
-            <Label htmlFor="subscription_tier">Plano de Subscrição</Label>
-            <div className="mt-1 flex items-center gap-4">
-              <select
-                id="subscription_tier"
-                value={formData.subscription_tier}
-                onChange={(e) => setFormData({ ...formData, subscription_tier: e.target.value as 'free' | 'paid' })}
-                className="block w-full max-w-xs rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              >
-                <option value="free">Gratuito (Sync a cada 12 horas)</option>
-                <option value="paid">Pago (Sync a cada 15 minutos)</option>
-              </select>
-            </div>
+            {/* Read-only: the tier is a billing entitlement and the settings API
+                no longer accepts it from the client. */}
+            <p className="text-sm font-medium text-foreground">Plano de Subscrição</p>
+            <p className="mt-1 text-sm text-foreground">
+              {settings?.subscription_tier === 'paid'
+                ? 'Pago (Sync a cada 15 minutos)'
+                : 'Gratuito (Sync a cada 12 horas)'}
+            </p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Em produção, isto seria gerido pelo sistema de pagamentos.
+              O plano é gerido pelo sistema de pagamentos.
             </p>
           </div>
         </div>

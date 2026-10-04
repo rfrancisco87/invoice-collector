@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireApiUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { listDriveFolders, getFolderHierarchy } from '@/lib/google-drive'
-import { getValidAccessToken } from '@/lib/token-refresh'
+import { getValidGmailAccessToken } from '@/lib/gmail-tokens'
 
 export async function GET(request: Request) {
   try {
@@ -27,37 +27,22 @@ export async function GET(request: Request) {
       )
     }
 
-    // Get valid access token (will refresh if needed)
-    const tokenResult = await getValidAccessToken(
-      gmailAccount.access_token,
-      gmailAccount.refresh_token,
-      gmailAccount.token_expiry
-    )
-
-    // Update database if token was refreshed
-    if (tokenResult.needsUpdate && tokenResult.newExpiry) {
-      await supabase
-        .from('gmail_accounts')
-        .update({
-          access_token: tokenResult.accessToken,
-          token_expiry: tokenResult.newExpiry,
-        })
-        .eq('id', gmailAccount.id)
-        .eq('user_id', user.id)
-    }
+    // Stored tokens are encrypted; this decrypts, refreshes if needed and
+    // persists any refreshed token encrypted.
+    const accessToken = await getValidGmailAccessToken(supabase, gmailAccount)
 
     const { searchParams } = new URL(request.url)
     const resolvePath = searchParams.get('resolvePath')
     const folderId = searchParams.get('folderId')
 
     if (resolvePath && folderId) {
-      const hierarchy = await getFolderHierarchy(tokenResult.accessToken, folderId)
+      const hierarchy = await getFolderHierarchy(accessToken, folderId)
       return NextResponse.json({ hierarchy })
     }
 
     const parentId = searchParams.get('parentId') || 'root'
 
-    const folders = await listDriveFolders(tokenResult.accessToken, parentId)
+    const folders = await listDriveFolders(accessToken, parentId)
 
     return NextResponse.json({ folders })
   } catch (error) {

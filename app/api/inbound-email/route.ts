@@ -2,9 +2,10 @@ import { NextResponse } from 'next/server'
 // import { createClient } from '@/lib/supabase/server' // Don't use SSR client for webhooks
 import { createClient } from '@supabase/supabase-js'
 import { ingestDocument } from '@/lib/ingestion'
-import { getValidAccessToken } from '@/lib/token-refresh'
+import { getValidGmailAccessToken } from '@/lib/gmail-tokens'
 import { readSvixHeaders, verifySvixSignature } from '@/lib/webhook-signature'
 import { resolveSiblingsForMessage } from '@/lib/classifier/resolve-siblings'
+import { notifyPendingDocuments } from '@/lib/notifications'
 import type { PairPreference } from '@/lib/classifier/pairing'
 import { randomUUID } from 'crypto'
 
@@ -102,23 +103,9 @@ export async function POST(request: Request) {
         // Get valid token
         let providerToken: string
         try {
-            const tokenResult = await getValidAccessToken(
-                gmailAccount.access_token,
-                gmailAccount.refresh_token,
-                gmailAccount.token_expiry
-            )
-            providerToken = tokenResult.accessToken
-
-            if (tokenResult.needsUpdate && tokenResult.newExpiry) {
-                await supabase
-                    .from('gmail_accounts')
-                    .update({
-                        access_token: tokenResult.accessToken,
-                        token_expiry: tokenResult.newExpiry,
-                    })
-                    .eq('id', gmailAccount.id)
-            }
-
+            // Stored tokens are encrypted; this decrypts, refreshes if needed and
+            // persists any refreshed token encrypted (scoped by id and user_id).
+            providerToken = await getValidGmailAccessToken(supabase, gmailAccount)
         } catch (e) {
             return NextResponse.json({ error: 'Failed to refresh token' }, { status: 401 })
         }
@@ -189,11 +176,29 @@ export async function POST(request: Request) {
             }
         }
 
+        // Notify like the sync routes do. Forwarded invoices used to be stored
+        // without any email. A send failure is logged, not returned as an
+        // error: the documents are saved (the next sync retries the email)
+        // and a Resend retry of this webhook would only dedupe.
+        const newDocumentIds = results
+            .filter(r => r.action === 'processed' && r.documentId)
+            .map(r => r.documentId as string)
+        const notification = await notifyPendingDocuments(
+            supabase,
+            settings.user_id,
+            settings,
+            newDocumentIds,
+        )
+        if (!notification.sent && notification.count > 0) {
+            console.warn(`[Inbound Email] Notification not sent for user ${settings.user_id}: ${notification.reason}`)
+        }
+
         return NextResponse.json({
             success: true,
             processed: results.length,
             details: results,
             pairing,
+            notification,
         })
 
     } catch (error) {

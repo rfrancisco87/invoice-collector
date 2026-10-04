@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireApiUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { getDriveClient } from '@/lib/google-drive'
+import { getValidGmailAccessToken } from '@/lib/gmail-tokens'
 import {
   DEFAULT_APPROVED_FILENAME_TEMPLATE,
   renderApprovedFilename,
@@ -44,7 +45,7 @@ export async function POST(request: Request) {
     // @ts-ignore - TypeScript has issues with Supabase types
     const { data: gmailAccount, error: gmailError } = await supabase
       .from('gmail_accounts')
-      .select('access_token')
+      .select('id, user_id, access_token, refresh_token, token_expiry')
       .eq('user_id', user.id)
       .maybeSingle()
 
@@ -68,8 +69,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Drive folder not configured' }, { status: 400 })
     }
 
-    // @ts-ignore
-    const drive = await getDriveClient(gmailAccount.access_token)
+    // Stored tokens are encrypted; this decrypts and refreshes if needed.
+    const drive = await getDriveClient(await getValidGmailAccessToken(supabase, gmailAccount))
 
     if (action === 'approve') {
       // Move to Approved/MM-YYYY folder
@@ -214,13 +215,15 @@ export async function POST(request: Request) {
         sender_domain: document.sender_domain,
       })
     } else {
-      // Reject - delete from Drive and mark as rejected
+      // Reject - move to Drive trash (not a hard delete) so the rejection can
+      // be reverted from the Rejected page. Drive purges trash after 30 days.
       // @ts-ignore
       if (document.drive_file_id) {
         // @ts-ignore
-        await drive.files.delete({
+        await drive.files.update({
           // @ts-ignore
           fileId: document.drive_file_id,
+          requestBody: { trashed: true },
         })
       }
 

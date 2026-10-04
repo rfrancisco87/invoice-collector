@@ -1741,3 +1741,299 @@ COMMENT ON VIEW admin_stats IS
   'Aggregate statistics for the admin dashboard. service_role only — the application enforces the admin role check.';
 COMMENT ON VIEW admin_sync_logs IS
   'Recent sync jobs with the owning user''s email. service_role only — contains PII.';
+
+-- ==========================================================================
+-- supabase/migrations/026_revoke_cron_rpc.sql
+-- ==========================================================================
+
+-- trigger_auto_sync() and manual_trigger_sync() are SECURITY DEFINER and, by
+-- Postgres default, executable by PUBLIC. That exposed them through PostgREST
+-- (POST /rest/v1/rpc/manual_trigger_sync) to anyone holding the public anon
+-- key, letting them fire the cron sweep on demand. Only pg_cron (running as
+-- the owner) needs to call them.
+
+REVOKE EXECUTE ON FUNCTION trigger_auto_sync() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION manual_trigger_sync() FROM PUBLIC, anon, authenticated;
+
+-- Pin search_path so a SECURITY DEFINER body can't be hijacked by objects in
+-- a caller-controlled schema.
+ALTER FUNCTION trigger_auto_sync() SET search_path = public, extensions, net;
+ALTER FUNCTION manual_trigger_sync() SET search_path = public, extensions, net;
+
+-- ==========================================================================
+-- supabase/migrations/027_document_notified_at.sql
+-- ==========================================================================
+
+-- Durable "new documents" notifications.
+--
+-- The email used to be built from an in-memory list at the end of a sync. If
+-- the function died after documents were committed (timeout, crash) or Resend
+-- rejected the send, those documents were never notified: the next run saw
+-- them as duplicates. Notification state now lives on the row, so anything
+-- not yet notified is picked up by the next run.
+
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS notified_at TIMESTAMPTZ;
+
+-- Existing rows were either already notified or are too old to be news;
+-- mark them so the first run after deploy doesn't email the whole backlog.
+UPDATE documents SET notified_at = COALESCE(created_at, NOW()) WHERE notified_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_documents_unnotified
+  ON documents (user_id, created_at)
+  WHERE notified_at IS NULL;
+
+-- pg_net gives up on a request after 5s by default. The sync sweep runs far
+-- longer (maxDuration = 300 on /api/cron/sync), so match it; otherwise the
+-- request is abandoned and failures never show up in net._http_response.
+-- CREATE OR REPLACE resets function settings, so search_path from 026 is
+-- restated here.
+CREATE OR REPLACE FUNCTION trigger_auto_sync()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions, net
+AS $$
+DECLARE
+  app_url TEXT;
+  cron_secret TEXT;
+  request_id BIGINT;
+BEGIN
+  SELECT value INTO app_url FROM cron_config WHERE key = 'app_url';
+  SELECT value INTO cron_secret FROM cron_config WHERE key = 'cron_secret';
+
+  IF app_url IS NULL OR cron_secret IS NULL THEN
+    RAISE NOTICE 'Cron config not set. Please update cron_config table with app_url and cron_secret.';
+    RETURN;
+  END IF;
+
+  SELECT net.http_post(
+    url := app_url || '/api/cron/sync',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'Authorization', 'Bearer ' || cron_secret
+    ),
+    body := '{}'::jsonb,
+    timeout_milliseconds := 300000
+  ) INTO request_id;
+
+  RAISE NOTICE 'Auto-sync triggered, request_id: %', request_id;
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION trigger_auto_sync() FROM PUBLIC, anon, authenticated;
+
+-- ==========================================================================
+-- supabase/migrations/028_lock_signup_and_session_version.sql
+-- ==========================================================================
+
+-- Migration 028: Close the self-signup bypass and make sessions revocable
+--
+-- 1. handle_new_user() created an *active* profile for every auth.users row
+--    (profiles.status defaults to 'active' since 019). Anyone holding the
+--    public anon key could call supabase.auth.signUp(), get an active profile,
+--    then use forgot-password/reset-password to mint app credentials — a full
+--    account with no invite. New rows now start as 'invited'; the invite-only
+--    signup route (app/api/auth/signup) promotes its own users to 'active'
+--    explicitly once the invite is validated.
+--
+-- 2. Session cookies are stateless HMAC tokens valid for 30 days, so
+--    suspending a user or resetting a leaked password left existing sessions
+--    working. profiles.session_version is embedded in the token and compared
+--    on every request; bumping it invalidates every outstanding session.
+
+-- ---------------------------------------------------------------------------
+-- 1. Self-signup no longer yields an active profile
+-- ---------------------------------------------------------------------------
+
+-- Belt and braces: even a code path that inserts a profile without naming the
+-- status now gets the inert state.
+ALTER TABLE profiles ALTER COLUMN status SET DEFAULT 'invited';
+
+CREATE OR REPLACE FUNCTION handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.profiles (id, email, full_name, avatar_url, onboarding_completed, onboarding_step, demo_invoice_created, status)
+  VALUES (
+    NEW.id,
+    NEW.email,
+    COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'name'),
+    NEW.raw_user_meta_data->>'avatar_url',
+    false,
+    0,
+    false,
+    'invited'
+  )
+  -- status deliberately not touched on conflict: re-creating an auth user
+  -- must not demote (or promote) an existing account.
+  ON CONFLICT (id) DO UPDATE SET
+    email = EXCLUDED.email,
+    full_name = COALESCE(EXCLUDED.full_name, profiles.full_name),
+    avatar_url = COALESCE(EXCLUDED.avatar_url, profiles.avatar_url),
+    updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- ---------------------------------------------------------------------------
+-- 2. Revocable sessions
+-- ---------------------------------------------------------------------------
+
+ALTER TABLE profiles
+  ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 0;
+
+COMMENT ON COLUMN profiles.session_version IS
+  'Embedded in the signed session cookie. Incrementing it logs the user out everywhere. Bumped automatically on status change and password change.';
+
+-- Bumped in the database rather than in each route, so a suspension or
+-- password change made from the Supabase SQL editor / dashboard revokes
+-- sessions just as reliably as one made through the app.
+
+CREATE OR REPLACE FUNCTION bump_session_version_on_status_change()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.status IS DISTINCT FROM OLD.status THEN
+    NEW.session_version := OLD.session_version + 1;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SET search_path = public;
+
+DROP TRIGGER IF EXISTS profiles_bump_session_version ON profiles;
+CREATE TRIGGER profiles_bump_session_version
+  BEFORE UPDATE OF status ON profiles
+  FOR EACH ROW
+  EXECUTE FUNCTION bump_session_version_on_status_change();
+
+CREATE OR REPLACE FUNCTION bump_session_version_on_password_change()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- Inserts count too: reset-password upserts, and the first credential row
+  -- for an account should not honour any session issued before it existed.
+  IF TG_OP = 'INSERT' OR NEW.password_hash IS DISTINCT FROM OLD.password_hash THEN
+    UPDATE public.profiles
+      SET session_version = session_version + 1
+      WHERE id = NEW.profile_id;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+DROP TRIGGER IF EXISTS app_credentials_bump_session_version ON app_credentials;
+CREATE TRIGGER app_credentials_bump_session_version
+  AFTER INSERT OR UPDATE OF password_hash ON app_credentials
+  FOR EACH ROW
+  EXECUTE FUNCTION bump_session_version_on_password_change();
+
+-- ==========================================================================
+-- supabase/migrations/029_auth_rate_limits.sql
+-- ==========================================================================
+
+-- Migration 029: Rate limiting for the public auth endpoints
+--
+-- login, signup, forgot-password and reset-password are unauthenticated.
+-- Without a limit they allow online password guessing and reset-email
+-- flooding. The app runs on Vercel serverless, so an in-memory counter would
+-- reset on every cold start and is not shared between instances; the counter
+-- lives here instead.
+--
+-- Fixed-window counters keyed by an opaque string chosen by lib/rate-limit.ts
+-- (e.g. 'login:ip:1.2.3.4'). Only the service role touches this table.
+
+CREATE TABLE IF NOT EXISTS auth_rate_limits (
+  key TEXT NOT NULL,
+  window_start TIMESTAMPTZ NOT NULL,
+  count INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (key, window_start)
+);
+
+-- For pruning old windows.
+CREATE INDEX IF NOT EXISTS auth_rate_limits_window_start_idx
+  ON auth_rate_limits (window_start);
+
+-- RLS on with no policies: anon/authenticated get nothing through PostgREST.
+-- The service role bypasses RLS.
+ALTER TABLE auth_rate_limits ENABLE ROW LEVEL SECURITY;
+
+COMMENT ON TABLE auth_rate_limits IS
+  'Fixed-window request counters for unauthenticated auth endpoints. Written only via hit_rate_limit().';
+
+-- Records one hit against p_key and reports whether the caller is now over
+-- p_max for the current p_window_seconds window. The increment is a single
+-- upsert, so concurrent requests cannot both read a stale count and slip
+-- under the limit.
+CREATE OR REPLACE FUNCTION hit_rate_limit(p_key TEXT, p_window_seconds INTEGER, p_max INTEGER)
+RETURNS BOOLEAN AS $$
+DECLARE
+  v_window TIMESTAMPTZ;
+  v_count INTEGER;
+BEGIN
+  v_window := to_timestamp(
+    floor(extract(epoch FROM now()) / p_window_seconds) * p_window_seconds
+  );
+
+  INSERT INTO auth_rate_limits AS r (key, window_start, count)
+  VALUES (p_key, v_window, 1)
+  ON CONFLICT (key, window_start)
+  DO UPDATE SET count = r.count + 1
+  RETURNING r.count INTO v_count;
+
+  -- Opportunistic cleanup so the table does not grow without bound. Cheap
+  -- thanks to the window_start index; a day comfortably exceeds every window
+  -- the app uses.
+  IF random() < 0.01 THEN
+    DELETE FROM auth_rate_limits WHERE window_start < now() - INTERVAL '1 day';
+  END IF;
+
+  RETURN v_count > p_max;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- SECURITY DEFINER functions are executable by PUBLIC by default, which would
+-- let anyone with the anon key inflate counters for arbitrary keys (i.e. lock
+-- other people out). Only the server, via the service role, may call it.
+REVOKE EXECUTE ON FUNCTION hit_rate_limit(TEXT, INTEGER, INTEGER) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION hit_rate_limit(TEXT, INTEGER, INTEGER) TO service_role;
+
+-- ==========================================================================
+-- supabase/migrations/030_protect_subscription_tier.sql
+-- ==========================================================================
+
+-- The settings API no longer accepts subscription_tier, but the
+-- "Users can manage own settings" RLS policy is FOR ALL, so anyone holding a
+-- Supabase user JWT could still PATCH user_settings through PostgREST and
+-- upgrade themselves. sync_frequency_minutes needs the same protection: the
+-- cron uses it for free-tier users, so writing 1 there is an upgrade too.
+-- Only the service role (the app's server code) or a direct SQL session may
+-- change either column.
+
+CREATE OR REPLACE FUNCTION protect_billing_columns()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
+BEGIN
+  -- auth.role() is 'anon' / 'authenticated' for PostgREST user requests,
+  -- 'service_role' for the server, and NULL for direct SQL.
+  IF COALESCE(auth.role(), '') NOT IN ('anon', 'authenticated') THEN
+    RETURN NEW;
+  END IF;
+
+  IF TG_OP = 'INSERT' THEN
+    NEW.subscription_tier := 'free';
+    NEW.sync_frequency_minutes := NULL;
+  ELSIF NEW.subscription_tier IS DISTINCT FROM OLD.subscription_tier
+     OR NEW.sync_frequency_minutes IS DISTINCT FROM OLD.sync_frequency_minutes THEN
+    RAISE EXCEPTION 'subscription_tier and sync_frequency_minutes can only be changed by the server'
+      USING ERRCODE = '42501';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+-- Named to sort before 009's tier trigger, so on INSERT the forced 'free'
+-- is what that trigger derives sync_frequency_minutes from.
+DROP TRIGGER IF EXISTS a_protect_billing_columns ON user_settings;
+CREATE TRIGGER a_protect_billing_columns
+  BEFORE INSERT OR UPDATE ON user_settings
+  FOR EACH ROW EXECUTE FUNCTION protect_billing_columns();

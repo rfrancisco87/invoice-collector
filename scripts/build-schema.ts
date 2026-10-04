@@ -78,6 +78,15 @@ const ORDER: string[] = [
     // Replaces the admin views from 011. Must run after 019, which adds the
     // profiles.status column the corrected definition filters on.
     'supabase/migrations/025_fix_admin_views.sql',
+
+    // Security and notification fixes. 026/027 redefine the cron functions
+    // from 013; 028 replaces the handle_new_user trigger from 010; 030's
+    // trigger relies on 009's tier trigger existing.
+    'supabase/migrations/026_revoke_cron_rpc.sql',
+    'supabase/migrations/027_document_notified_at.sql',
+    'supabase/migrations/028_lock_signup_and_session_version.sql',
+    'supabase/migrations/029_auth_rate_limits.sql',
+    'supabase/migrations/030_protect_subscription_tier.sql',
 ]
 
 /**

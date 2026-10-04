@@ -1,7 +1,16 @@
 import { NextResponse } from 'next/server'
+import { cookies } from 'next/headers'
 import { requireApiUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { google } from 'googleapis'
+import { encryptToken } from '@/lib/gmail-tokens'
+import {
+  GMAIL_OAUTH_STATE_COOKIE,
+  GMAIL_OAUTH_VERIFIER_COOKIE,
+  clearGmailOAuthCookies,
+  createGmailOAuthClient,
+  stateMatches,
+} from '@/lib/gmail-oauth'
 
 export const dynamic = 'force-dynamic'
 
@@ -9,13 +18,20 @@ export const dynamic = 'force-dynamic'
  * Gmail OAuth Callback
  *
  * Handles the callback from Google after user authorizes Gmail access.
- * Stores tokens in gmail_accounts table for the authenticated user.
+ * Stores tokens (encrypted) in gmail_accounts table for the authenticated user.
  */
 export async function GET(request: Request) {
+  const response = await handleCallback(request)
+  // The state/verifier cookies are single use whatever the outcome.
+  clearGmailOAuthCookies(response)
+  return response
+}
+
+async function handleCallback(request: Request): Promise<NextResponse> {
   try {
     const url = new URL(request.url)
     const code = url.searchParams.get('code')
-    const state = url.searchParams.get('state') // User ID from connect route
+    const state = url.searchParams.get('state')
     const error = url.searchParams.get('error')
 
     // Handle OAuth errors
@@ -32,22 +48,33 @@ export async function GET(request: Request) {
       )
     }
 
-    // Verify user is authenticated and matches state
+    // The account is bound to whoever holds this session — never to anything
+    // carried in the URL, which an attacker controls.
     const user = await requireApiUser()
     const supabase = await createClient()
 
-    if (!user || user.id !== state) {
+    if (!user) {
       return NextResponse.redirect(
         `${process.env.NEXT_PUBLIC_APP_URL}/login?error=session_mismatch`
       )
     }
 
+    // The state must match the one this browser was given by /api/gmail/connect.
+    // A mismatch means the flow was started elsewhere (e.g. an attacker's
+    // consent link replayed into the victim's session), so refuse to bind it.
+    const cookieStore = await cookies()
+    const expectedState = cookieStore.get(GMAIL_OAUTH_STATE_COOKIE)?.value
+    const codeVerifier = cookieStore.get(GMAIL_OAUTH_VERIFIER_COOKIE)?.value
+
+    if (!stateMatches(state, expectedState) || !codeVerifier) {
+      console.warn('[Gmail Callback] OAuth state mismatch or missing verifier')
+      return NextResponse.redirect(
+        `${process.env.NEXT_PUBLIC_APP_URL}/gmail-connect?error=state_mismatch`
+      )
+    }
+
     // Exchange authorization code for tokens
-    const oauth2Client = new google.auth.OAuth2(
-      process.env.GOOGLE_CLIENT_ID,
-      process.env.GOOGLE_CLIENT_SECRET,
-      `${process.env.NEXT_PUBLIC_APP_URL}/api/gmail/callback`
-    )
+    const oauth2Client = createGmailOAuthClient()
 
     // Exchanging the code is the step most likely to fail, and it fails for
     // reasons the user can act on (a reused code after a refresh, a stale
@@ -55,7 +82,7 @@ export async function GET(request: Request) {
     // way to tell them apart from the logs.
     let tokens
     try {
-      ({ tokens } = await oauth2Client.getToken(code))
+      ({ tokens } = await oauth2Client.getToken({ code, codeVerifier }))
     } catch (exchangeError: any) {
       const detail = exchangeError?.response?.data ?? exchangeError?.message
       console.error('[Gmail Callback] Code exchange failed:', detail)
@@ -123,8 +150,9 @@ export async function GET(request: Request) {
       .upsert({
         user_id: user.id,
         email: gmailEmail,
-        access_token: tokens.access_token,
-        refresh_token: tokens.refresh_token,
+        // Encrypted at rest; see lib/gmail-tokens.ts.
+        access_token: encryptToken(tokens.access_token),
+        refresh_token: encryptToken(tokens.refresh_token),
         token_expiry: tokenExpiry,
         is_primary: true,
       }, {

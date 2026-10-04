@@ -22,13 +22,13 @@ export async function POST(request: Request) {
             sender: 'contacto@casadamoeda.com',
             sender_domain: 'casadamoeda.com',
             received_date: new Date().toISOString(),
-            status: 'pending',
-            source: 'gmail', // Corrected source
+            status: 'pending' as const,
+            source: 'gmail' as const, // Corrected source
             confidence_score: 1.0,
 
             // Required DB Fields
-            original_classification: 'invoice',
-            final_classification: 'invoice',
+            original_classification: 'invoice' as const,
+            final_classification: 'invoice' as const,
 
             // Extracted Data per User Request
             // Note: These flat columns match the schema inferred from success

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { hashPassword } from '@/lib/password'
 import { checkPasswordPolicy, hashToken } from '@/lib/account-tokens'
+import { getClientIp, isRateLimited, rateLimitResponse } from '@/lib/rate-limit'
 
 /**
  * Redeem a password reset token and set a new password.
@@ -11,6 +12,17 @@ import { checkPasswordPolicy, hashToken } from '@/lib/account-tokens'
  */
 export async function POST(request: Request) {
     try {
+        // Tokens are long random values, so this is not about guessing them;
+        // it bounds how hard anyone can hammer an unauthenticated endpoint that
+        // hashes passwords (scrypt) on every valid-looking request.
+        if (
+            await isRateLimited([
+                { key: `reset:ip:${getClientIp(request)}`, windowSeconds: 60 * 60, max: 20 },
+            ])
+        ) {
+            return rateLimitResponse()
+        }
+
         const body = await request.json().catch(() => ({}))
         const { token, password } = body ?? {}
 
@@ -44,6 +56,23 @@ export async function POST(request: Request) {
         if (row.used_at) return invalidToken
         if (new Date(row.expires_at) < new Date()) return invalidToken
 
+        // forgot-password already refuses these, but a token issued before an
+        // account was suspended (or before that check existed) must not work
+        // either. Same response as a bad token, so nothing about the account
+        // leaks.
+        const [{ data: profile }, { data: credential }] = await Promise.all([
+            supabase.from('profiles').select('status').eq('id', row.profile_id).maybeSingle(),
+            supabase
+                .from('app_credentials')
+                .select('profile_id')
+                .eq('profile_id', row.profile_id)
+                .maybeSingle(),
+        ])
+
+        if (!profile || (profile as any).status !== 'active' || !credential) {
+            return invalidToken
+        }
+
         // Consume first, conditional on still being unused. If two requests race,
         // only one gets a row back and only that one is allowed to set a password.
         const { data: consumed } = await supabase
@@ -56,17 +85,19 @@ export async function POST(request: Request) {
 
         if (!consumed || consumed.length === 0) return invalidToken
 
+        // update, not upsert: a reset replaces an existing password and must
+        // never create the first credential row for an account — that is how
+        // a self-registered (non-invited) profile would have obtained a login.
+        // The app_credentials trigger (migration 028) bumps session_version,
+        // logging out every existing session for this user.
         const { error: updateError } = await supabase
             .from('app_credentials')
             // @ts-ignore - Supabase row types infer as never across this project
-            .upsert(
-                {
-                    profile_id: row.profile_id,
-                    password_hash: hashPassword(password),
-                    updated_at: new Date().toISOString(),
-                },
-                { onConflict: 'profile_id' }
-            )
+            .update({
+                password_hash: hashPassword(password),
+                updated_at: new Date().toISOString(),
+            })
+            .eq('profile_id', row.profile_id)
 
         if (updateError) {
             console.error('[Reset Password] Failed to update credentials:', updateError)

@@ -29,14 +29,14 @@ import { DocumentEditDialog, type EditableDocument } from '@/components/document
 interface Document {
   id: string
   filename: string
-  sender: string
-  sender_domain: string
+  sender: string | null
+  sender_domain: string | null
   subject: string | null
   received_date: string
   original_classification: string
   final_classification: string
-  confidence_score: number
-  drive_file_id: string
+  confidence_score: number | null
+  drive_file_id: string | null
   status: string
   was_reclassified: boolean
   webhook_error: string | null
@@ -413,7 +413,7 @@ export function DocumentList({ documents }: DocumentListProps) {
                             : 'text-muted-foreground bg-muted'
                             }`}
                         >
-                          {Math.round(doc.confidence_score * 100)}%
+                          {Math.round((doc.confidence_score ?? 0) * 100)}%
                         </span>
                       </TooltipTrigger>
                       <TooltipContent className="max-w-xs">
@@ -490,7 +490,8 @@ export function DocumentList({ documents }: DocumentListProps) {
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Button
-                              onClick={() => openInDrive(doc.drive_file_id)}
+                              onClick={() => doc.drive_file_id && openInDrive(doc.drive_file_id)}
+                              disabled={!doc.drive_file_id}
                               variant="ghost"
                               size="sm"
                               className="h-8 w-8 p-0"

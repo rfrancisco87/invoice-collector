@@ -54,7 +54,7 @@ export default async function RejectedPage() {
         <CardHeader>
           <CardTitle>Documentos Rejeitados</CardTitle>
           <CardDescription>
-            Documentos rejeitados. Os automáticos podem ser restaurados se a decisão estiver errada.
+            Documentos rejeitados. Podem ser restaurados se a decisão estiver errada (rejeições manuais: até 30 dias).
           </CardDescription>
         </CardHeader>
         {documents && documents.length > 0 ? (
