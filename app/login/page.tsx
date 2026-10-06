@@ -12,7 +12,11 @@ import { Mail, Lock, AlertCircle } from 'lucide-react'
 function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const redirectTo = searchParams.get('redirect') || '/dashboard'
+  // Same-origin paths only: `//evil.com` and `/\evil.com` are protocol-relative
+  // URLs to another host, which would make login an open redirect.
+  const redirectParam = searchParams.get('redirect')
+  const redirectTo =
+    redirectParam && /^\/(?![\/\\])/.test(redirectParam) ? redirectParam : '/dashboard'
   const errorParam = searchParams.get('error')
 
   const [email, setEmail] = useState('')

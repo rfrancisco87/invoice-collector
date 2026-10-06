@@ -17,6 +17,10 @@ export type AppUser = {
 type SessionPayload = {
   sub: string
   exp: number
+  // profiles.session_version at issue time. Bumping the column (on suspension
+  // or password change) invalidates every token carrying an older value.
+  // Absent on tokens issued before the field existed; those read as 0.
+  ver?: number
 }
 
 function getSessionSecret() {
@@ -75,10 +79,11 @@ async function signValue(value: string) {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
 }
 
-async function createSessionToken(userId: string) {
+async function createSessionToken(userId: string, sessionVersion: number) {
   const payload: SessionPayload = {
     sub: userId,
     exp: Date.now() + SESSION_DURATION_MS,
+    ver: sessionVersion,
   }
 
   const encodedPayload = base64UrlEncode(JSON.stringify(payload))
@@ -141,15 +146,29 @@ function authCookieOptions() {
   }
 }
 
-async function getUserById(userId: string): Promise<AppUser | null> {
+async function getUserById(userId: string, tokenVersion: number): Promise<AppUser | null> {
   const supabase = createAdminClient()
-  const { data: profile } = await supabase
+  const { data } = await supabase
     .from('profiles')
-    .select('id, email, full_name, avatar_url, role')
+    .select('id, email, full_name, avatar_url, role, status, session_version')
     .eq('id', userId)
     .single()
 
+  const profile = data as any
+
   if (!profile) {
+    return null
+  }
+
+  // The cookie is only proof of a past login. Re-check on every request so a
+  // suspension takes effect immediately rather than when the cookie expires.
+  if (profile.status !== 'active') {
+    return null
+  }
+
+  // A password reset or status change bumps session_version; tokens minted
+  // before that are dead even though their signature is still valid.
+  if ((profile.session_version ?? 0) !== tokenVersion) {
     return null
   }
 
@@ -171,7 +190,7 @@ export async function getCurrentUser() {
     return null
   }
 
-  return getUserById(payload.sub)
+  return getUserById(payload.sub, payload.ver ?? 0)
 }
 
 export async function requireCurrentUser(redirectTo?: string) {
@@ -196,7 +215,26 @@ export async function requireApiUser() {
 }
 
 export async function applyLoginSession(response: NextResponse, userId: string) {
-  response.cookies.set(AUTH_COOKIE_NAME, await createSessionToken(userId), authCookieOptions())
+  // Read the version at issue time rather than taking it from the caller, so
+  // every login path stamps the current value without having to know about it.
+  const supabase = createAdminClient()
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('session_version')
+    .eq('id', userId)
+    .single()
+
+  if (error || !data) {
+    throw new Error(`Could not read session_version for ${userId}: ${error?.message ?? 'no profile'}`)
+  }
+
+  const sessionVersion = (data as any).session_version ?? 0
+
+  response.cookies.set(
+    AUTH_COOKIE_NAME,
+    await createSessionToken(userId, sessionVersion),
+    authCookieOptions()
+  )
   return response
 }
 
@@ -217,5 +255,5 @@ export async function getUserFromRequest(request: NextRequest) {
     return null
   }
 
-  return getUserById(payload.sub)
+  return getUserById(payload.sub, payload.ver ?? 0)
 }

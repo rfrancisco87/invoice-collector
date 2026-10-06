@@ -72,7 +72,8 @@ export async function POST(request: Request) {
             .eq('user_id', user.id)
 
         if (error) {
-            return NextResponse.json({ error: error.message }, { status: 500 })
+            console.error('[Documents Edit] Update failed:', error)
+            return NextResponse.json({ error: 'Failed to update document' }, { status: 500 })
         }
 
         return NextResponse.json({ success: true })

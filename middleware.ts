@@ -1,7 +1,35 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { clearLoginSession, getUserFromRequest } from '@/lib/auth'
 
-function addSecurityHeaders(response: NextResponse) {
+/**
+ * Nonce-based CSP. 'unsafe-inline' for scripts made the policy useless against
+ * XSS; with a per-request nonce only scripts Next renders (which it tags with
+ * the nonce it finds in the request's CSP header) can run, and
+ * 'strict-dynamic' lets those load their own chunks. 'unsafe-eval' is only
+ * needed by React Refresh in development. Styles keep 'unsafe-inline': Radix
+ * and next/font emit inline styles, and style injection is far lower risk.
+ */
+function buildCsp(nonce?: string) {
+  const isDev = process.env.NODE_ENV !== 'production'
+  const scriptSrc = nonce
+    ? `'self' 'nonce-${nonce}' 'strict-dynamic'${isDev ? " 'unsafe-eval'" : ''}`
+    : "'self'"
+
+  return (
+    "default-src 'self'; " +
+    `script-src ${scriptSrc}; ` +
+    "style-src 'self' 'unsafe-inline'; " +
+    "img-src 'self' data: https:; " +
+    "font-src 'self' data:; " +
+    "connect-src 'self' https://*.supabase.co https://*.googleapis.com; " +
+    "object-src 'none'; " +
+    "base-uri 'self'; " +
+    "form-action 'self'; " +
+    "frame-ancestors 'none';"
+  )
+}
+
+function addSecurityHeaders(response: NextResponse, csp = buildCsp()) {
   response.headers.set('X-Frame-Options', 'DENY')
   response.headers.set('X-Content-Type-Options', 'nosniff')
   response.headers.set('X-XSS-Protection', '1; mode=block')
@@ -10,16 +38,10 @@ function addSecurityHeaders(response: NextResponse) {
     'Permissions-Policy',
     'camera=(), microphone=(), geolocation=(), interest-cohort=()'
   )
-  response.headers.set(
-    'Content-Security-Policy',
-    "default-src 'self'; " +
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
-    "style-src 'self' 'unsafe-inline'; " +
-    "img-src 'self' data: https:; " +
-    "font-src 'self' data:; " +
-    "connect-src 'self' https://*.supabase.co https://*.googleapis.com; " +
-    "frame-ancestors 'none';"
-  )
+  response.headers.set('Content-Security-Policy', csp)
+  if (process.env.NODE_ENV === 'production') {
+    response.headers.set('Strict-Transport-Security', 'max-age=63072000; includeSubDomains')
+  }
 
   return response
 }
@@ -104,7 +126,15 @@ export async function middleware(request: NextRequest) {
     return addSecurityHeaders(clearLoginSession(response))
   }
 
-  return addSecurityHeaders(NextResponse.next())
+  // Next reads the nonce from the request's CSP header and stamps it on the
+  // scripts it renders; the layout passes it on to next-themes' inline script.
+  const nonce = btoa(crypto.randomUUID())
+  const csp = buildCsp(nonce)
+  const requestHeaders = new Headers(request.headers)
+  requestHeaders.set('x-nonce', nonce)
+  requestHeaders.set('Content-Security-Policy', csp)
+
+  return addSecurityHeaders(NextResponse.next({ request: { headers: requestHeaders } }), csp)
 }
 
 export const config = {

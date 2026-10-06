@@ -98,6 +98,24 @@ const MIGRATIONS: MigrationCheck[] = [
             { table: 'admin_sync_logs', column: 'user_email' },
         ],
     },
+    {
+        // 026's REVOKE can't be seen through PostgREST; this only covers 027.
+        file: '027_document_notified_at.sql',
+        description: 'Durable new-document notifications',
+        probes: [{ table: 'documents', column: 'notified_at' }],
+    },
+    {
+        // Login and every session check select this column; until it exists
+        // nobody can sign in.
+        file: '028_lock_signup_and_session_version.sql',
+        description: 'Session revocation on suspension / password reset',
+        probes: [{ table: 'profiles', column: 'session_version' }],
+    },
+    {
+        file: '029_auth_rate_limits.sql',
+        description: 'Rate limiting on auth endpoints',
+        probes: [{ table: 'auth_rate_limits' }],
+    },
 ]
 
 async function main() {

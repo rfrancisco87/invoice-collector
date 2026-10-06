@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireApiUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
+import { encryptToken } from '@/lib/gmail-tokens'
 
 export async function POST() {
   try {
@@ -42,8 +43,9 @@ export async function POST() {
         .insert({
           user_id: user.id,
           email: user.email,
-          access_token: 'demo_token',
-          refresh_token: 'demo_refresh',
+          // Placeholders, but stored like real tokens so every row has one format.
+          access_token: encryptToken('demo_token'),
+          refresh_token: encryptToken('demo_refresh'),
           token_expiry: new Date(Date.now() + 3600000).toISOString(),
           is_primary: true,
         })
@@ -68,11 +70,11 @@ export async function POST() {
       sender_domain: 'demosupplier.pt',
       received_date: new Date().toISOString(),
       filename: 'DEMO-2026-001.pdf',
-      original_classification: 'invoice',
-      final_classification: 'invoice',
+      original_classification: 'invoice' as const,
+      final_classification: 'invoice' as const,
       confidence_score: 0.95,
       was_reclassified: false,
-      status: 'pending',
+      status: 'pending' as const,
       is_demo: true,
       supplier_name: 'Demo Supplier Lda',
       invoice_number: 'DEMO-2026/001',

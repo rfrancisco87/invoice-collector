@@ -51,17 +51,10 @@ export function RejectedDocumentList({ documents }: RejectedDocumentListProps) {
       const body = await response.json()
       if (!response.ok) throw new Error(body.error || 'Falha ao restaurar')
 
-      // The source of the file determines whether re-ingestion will actually
-      // surface it again. Inbox-folder originals were deleted on auto-reject,
-      // so restoration only clears the block — the user needs to re-upload.
-      if (doc.source === 'inbox_folder') {
-        toast('Restaurado. O ficheiro original já não está no Drive — tem de voltar a carregá-lo.', {
-          icon: 'ℹ️',
-          duration: 6000,
-        })
-      } else {
-        toast.success('Restaurado. Será reprocessado na próxima sincronização.')
-      }
+      // Both paths end with the document back in the pending list: manual
+      // rejections are untrashed in place, auto-rejections are fetched again
+      // from Gmail / the inbox original and reprocessed.
+      toast.success('Restaurado. O documento voltou para pendentes.')
       router.refresh()
     } catch (error) {
       console.error('Restore error:', error)
@@ -149,27 +142,27 @@ export function RejectedDocumentList({ documents }: RejectedDocumentListProps) {
                 </div>
 
                 <div className="flex-shrink-0 w-28 flex justify-end ml-auto">
-                  {isAuto && (
-                    <TooltipProvider delayDuration={300}>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            onClick={() => handleRestore(doc)}
-                            disabled={isRestoring}
-                            variant="outline"
-                            size="sm"
-                            className="h-8 gap-1"
-                          >
-                            <RotateCcw className={`h-3.5 w-3.5 ${isRestoring ? 'animate-spin' : ''}`} />
-                            Restaurar
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          Reverter rejeição automática. Próxima sincronização irá reprocessar o ficheiro.
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  )}
+                  <TooltipProvider delayDuration={300}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          onClick={() => handleRestore(doc)}
+                          disabled={isRestoring}
+                          variant="outline"
+                          size="sm"
+                          className="h-8 gap-1"
+                        >
+                          <RotateCcw className={`h-3.5 w-3.5 ${isRestoring ? 'animate-spin' : ''}`} />
+                          Restaurar
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {isAuto
+                          ? 'Reverter rejeição automática. O ficheiro é reprocessado e volta para pendentes.'
+                          : 'Reverter rejeição. O documento volta para pendentes.'}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
               </div>
             </div>

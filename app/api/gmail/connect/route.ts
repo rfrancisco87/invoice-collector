@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server'
+import { Auth } from 'googleapis'
 import { requireApiUser } from '@/lib/auth'
 import { GMAIL_SCOPES, DRIVE_SCOPES } from '@/lib/constants'
+import {
+  createGmailOAuthClient,
+  generateOAuthState,
+  setGmailOAuthCookies,
+} from '@/lib/gmail-oauth'
 
 /**
  * Gmail Connection - Initiates OAuth flow for Gmail access
@@ -26,8 +32,6 @@ export async function GET(request: Request) {
       )
     }
 
-    const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/gmail/callback`
-
     // Build Google OAuth URL for Gmail access
     const { searchParams } = new URL(request.url)
     const mode = searchParams.get('mode')
@@ -36,19 +40,25 @@ export async function GET(request: Request) {
     // Default to full GMAIL_SCOPES if not specified or if mode is not 'storage'
     const scope = mode === 'storage' ? DRIVE_SCOPES : GMAIL_SCOPES
 
-    const params = new URLSearchParams({
-      client_id: process.env.GOOGLE_CLIENT_ID,
-      redirect_uri: redirectUri,
-      response_type: 'code',
-      scope: scope,
+    const oauth2Client = createGmailOAuthClient()
+
+    // Random state bound to this browser via cookie (see lib/gmail-oauth.ts),
+    // plus PKCE so an intercepted authorization code is useless on its own.
+    const state = generateOAuthState()
+    const { codeVerifier, codeChallenge } = await oauth2Client.generateCodeVerifierAsync()
+
+    const authUrl = oauth2Client.generateAuthUrl({
+      scope,
       access_type: 'offline',
       prompt: 'consent', // Always prompt to ensure we get refresh token
-      state: user.id, // Pass user ID to callback for verification
+      state,
+      code_challenge: codeChallenge,
+      code_challenge_method: Auth.CodeChallengeMethod.S256,
     })
 
-    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`
-
-    return NextResponse.redirect(authUrl)
+    const response = NextResponse.redirect(authUrl)
+    setGmailOAuthCookies(response, state, codeVerifier)
+    return response
   } catch (error) {
     console.error('[Gmail Connect] Error:', error)
     return NextResponse.json(

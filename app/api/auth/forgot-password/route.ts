@@ -7,6 +7,9 @@ import {
     resetTokenExpiryDate,
 } from '@/lib/account-tokens'
 import { sendPasswordResetEmail } from '@/lib/email'
+import { getClientIp, isRateLimited, rateLimitResponse } from '@/lib/rate-limit'
+
+const WINDOW_SECONDS = 60 * 60
 
 /**
  * Request a password reset link.
@@ -29,6 +32,19 @@ export async function POST(request: Request) {
 
         if (!email) return genericResponse
 
+        // Each accepted request sends an email, so this doubles as protection
+        // against using the app to flood someone's inbox. The 429 is the same
+        // for known and unknown addresses.
+        const ip = getClientIp(request)
+        if (
+            await isRateLimited([
+                { key: `forgot:email:${email}`, windowSeconds: WINDOW_SECONDS, max: 3 },
+                { key: `forgot:ip:${ip}`, windowSeconds: WINDOW_SECONDS, max: 10 },
+            ])
+        ) {
+            return rateLimitResponse()
+        }
+
         const supabase = createAdminClient()
 
         const { data: profile } = await supabase
@@ -39,9 +55,24 @@ export async function POST(request: Request) {
 
         const profileRow = profile as any
 
-        // Unknown address, or an account an admin has switched off: behave
-        // identically to the success path.
-        if (!profileRow || profileRow.status === 'suspended') {
+        // Unknown address, or any account that is not 'active': behave
+        // identically to the success path. Non-active includes 'invited'
+        // profiles, which is what a direct supabase.auth.signUp() with the
+        // public anon key produces — issuing a reset link there would let a
+        // self-registered user mint credentials and bypass invite-only signup.
+        if (!profileRow || profileRow.status !== 'active') {
+            return genericResponse
+        }
+
+        // A reset may only change an existing password, never create the first
+        // one. Every legitimate account gets credentials at signup.
+        const { data: credential } = await supabase
+            .from('app_credentials')
+            .select('profile_id')
+            .eq('profile_id', profileRow.id)
+            .maybeSingle()
+
+        if (!credential) {
             return genericResponse
         }
 

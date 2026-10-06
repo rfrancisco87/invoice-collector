@@ -3,7 +3,8 @@ import { requireApiUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { sendTestEmail } from '@/lib/email'
 import { createFolderStructure, deleteDriveFolder } from '@/lib/google-drive'
-import { getValidAccessToken } from '@/lib/token-refresh'
+import { assertSafeOutboundUrl, UnsafeUrlError } from '@/lib/safe-url'
+import { getValidGmailAccessToken } from '@/lib/gmail-tokens'
 
 export async function GET() {
   try {
@@ -57,7 +58,6 @@ export async function PATCH(request: Request) {
       notification_email,
       gmail_sync_label,
       archive_synced_emails,
-      subscription_tier,
       enabled_sources,
       onboarding_completed,
       drive_folder_id,
@@ -81,8 +81,6 @@ export async function PATCH(request: Request) {
       classifier_model,
     } = body
 
-    console.log('DEBUG: Settings PATCH received:', JSON.stringify(body, null, 2))
-
     const updates: any = {}
 
     if (sync_days_back !== undefined) updates.sync_days_back = sync_days_back
@@ -95,7 +93,27 @@ export async function PATCH(request: Request) {
     }
     if (gmail_sync_label !== undefined) updates.gmail_sync_label = gmail_sync_label || null
     if (archive_synced_emails !== undefined) updates.archive_synced_emails = archive_synced_emails
-    if (webhook_url !== undefined) updates.webhook_url = webhook_url || null
+    if (webhook_url !== undefined) {
+      if (webhook_url !== null && typeof webhook_url !== 'string') {
+        return NextResponse.json({ error: 'URL do webhook inválido.' }, { status: 400 })
+      }
+      const trimmedWebhookUrl = webhook_url?.trim() || null
+      // Validate at save time (DNS included) so an internal/metadata address is
+      // refused with a clear message instead of being stored and only failing
+      // later inside a sync. sendPdfToWebhook re-validates on every request.
+      if (trimmedWebhookUrl) {
+        try {
+          await assertSafeOutboundUrl(trimmedWebhookUrl)
+        } catch (err) {
+          const reason = err instanceof UnsafeUrlError ? err.message : 'Invalid webhook URL'
+          return NextResponse.json(
+            { error: `URL do webhook inválido: ${reason}` },
+            { status: 400 }
+          )
+        }
+      }
+      updates.webhook_url = trimmedWebhookUrl
+    }
     if (enabled_sources !== undefined) updates.enabled_sources = enabled_sources
 
     // Classification tuning. Values are validated here rather than relying on
@@ -208,11 +226,9 @@ export async function PATCH(request: Request) {
       updates.approved_filename_template = trimmed ? trimmed : null
     }
 
-    if (subscription_tier !== undefined) {
-      updates.subscription_tier = subscription_tier
-      // Automatically set sync frequency based on subscription tier
-      updates.sync_frequency_minutes = subscription_tier === 'paid' ? 15 : 720
-    }
+    // subscription_tier (and the sync_frequency_minutes derived from it) is
+    // deliberately not accepted here: it is a billing entitlement, so letting
+    // the client write it would be a free self-upgrade. Any value sent is ignored.
 
     // Auto-create folder structure if we have a Drive Folder ID
     const effectiveDriveId = drive_folder_id !== undefined ? drive_folder_id : (currentSettings?.drive_folder_id)
@@ -236,23 +252,9 @@ export async function PATCH(request: Request) {
 
       if (gmailAccount) {
         try {
-          const tokenResult = await getValidAccessToken(
-            gmailAccount.access_token,
-            gmailAccount.refresh_token,
-            gmailAccount.token_expiry
-          )
-
-          // Update database if token was refreshed
-          if (tokenResult.needsUpdate && tokenResult.newExpiry) {
-            await supabase
-              .from('gmail_accounts')
-              .update({
-                access_token: tokenResult.accessToken,
-                token_expiry: tokenResult.newExpiry,
-              })
-              .eq('id', gmailAccount.id)
-              .eq('user_id', user.id)
-          }
+          // Stored tokens are encrypted; this decrypts, refreshes if needed and
+          // persists any refreshed token encrypted.
+          const accessToken = await getValidGmailAccessToken(supabase, gmailAccount)
 
           // Handle Inbox Folder Logic
           if (inbox_folder_enabled === false && currentSettings?.inbox_folder_id) {
@@ -261,7 +263,7 @@ export async function PATCH(request: Request) {
             // Only auto-delete folders that were app-managed.
             if (currentInboxIsManaged) {
               try {
-                await deleteDriveFolder(tokenResult.accessToken, currentSettings.inbox_folder_id)
+                await deleteDriveFolder(accessToken, currentSettings.inbox_folder_id)
               } catch (delErr) {
                 console.error('Failed to delete inbox folder:', delErr)
               }
@@ -273,7 +275,7 @@ export async function PATCH(request: Request) {
             // Ensure structure / Create Inbox if needed
             // For existing-folder mode, never auto-create Inbox.
             const structure = await createFolderStructure(
-              tokenResult.accessToken,
+              accessToken,
               effectiveDriveId,
               !!effectiveInboxEnabled && effectiveInboxMode === 'managed'
             )
@@ -334,10 +336,6 @@ export async function PATCH(request: Request) {
       console.error('[Settings API] Supabase error:', error)
       return NextResponse.json({
         error: 'Failed to update settings',
-        details: error.message,
-        code: error.code,
-        // @ts-ignore - hint exists in some Supabase error types
-        hint: error.hint
       }, { status: 500 })
     }
 

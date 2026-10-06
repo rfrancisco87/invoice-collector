@@ -4,78 +4,17 @@
  * Sends PDF files to external webhook for automated data extraction
  */
 
-/**
- * Validate webhook URL to prevent SSRF attacks
- * Blocks private networks, localhost, and non-HTTPS URLs in production
- */
-function validateWebhookUrl(urlString: string): void {
-  let url: URL
-  try {
-    url = new URL(urlString)
-  } catch {
-    throw new Error('Invalid webhook URL format')
-  }
+import http from 'node:http'
+import https from 'node:https'
+import { assertSafeOutboundUrl, safeLookup, UnsafeUrlError } from '@/lib/safe-url'
 
-  // Only allow http and https protocols
-  if (!['http:', 'https:'].includes(url.protocol)) {
-    throw new Error('Webhook URL must use HTTP or HTTPS protocol')
-  }
-
-  // In production, require HTTPS
-  if (process.env.NODE_ENV === 'production' && url.protocol !== 'https:') {
-    throw new Error('Webhook URL must use HTTPS in production')
-  }
-
-  const hostname = url.hostname.toLowerCase()
-
-  // Block localhost and loopback
-  if (
-    hostname === 'localhost' ||
-    hostname === '127.0.0.1' ||
-    hostname === '::1' ||
-    hostname === '0.0.0.0' ||
-    hostname.endsWith('.localhost') ||
-    hostname.endsWith('.local')
-  ) {
-    throw new Error('Webhook URL cannot point to localhost')
-  }
-
-  // Block private IP ranges
-  const ipv4Match = hostname.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
-  if (ipv4Match) {
-    const [, a, b] = ipv4Match.map(Number)
-    // 10.0.0.0/8
-    if (a === 10) {
-      throw new Error('Webhook URL cannot point to private network (10.x.x.x)')
-    }
-    // 172.16.0.0/12
-    if (a === 172 && b >= 16 && b <= 31) {
-      throw new Error('Webhook URL cannot point to private network (172.16-31.x.x)')
-    }
-    // 192.168.0.0/16
-    if (a === 192 && b === 168) {
-      throw new Error('Webhook URL cannot point to private network (192.168.x.x)')
-    }
-    // 169.254.0.0/16 (link-local)
-    if (a === 169 && b === 254) {
-      throw new Error('Webhook URL cannot point to link-local address')
-    }
-    // 127.0.0.0/8 (loopback)
-    if (a === 127) {
-      throw new Error('Webhook URL cannot point to loopback address')
-    }
-  }
-
-  // Block cloud metadata endpoints
-  const blockedHosts = [
-    '169.254.169.254', // AWS/GCP/Azure metadata
-    'metadata.google.internal',
-    'metadata.goog',
-  ]
-  if (blockedHosts.includes(hostname)) {
-    throw new Error('Webhook URL cannot point to cloud metadata service')
-  }
-}
+const WEBHOOK_TIMEOUT_MS = 30_000
+// Extraction results are a handful of short fields; anything much larger is
+// not a legitimate response and should not be buffered into memory.
+const MAX_RESPONSE_BYTES = 1024 * 1024
+// The parsed fields are stored on the document and echoed to the client, so
+// cap them to keep a misbehaving endpoint from stuffing arbitrary data in.
+const MAX_FIELD_LENGTH = 500
 
 export interface WebhookResponse {
   invoice_number: string
@@ -90,6 +29,68 @@ export interface WebhookResponse {
   document_type: string
 }
 
+class WebhookRequestError extends Error {}
+
+/**
+ * POST a body to an already-validated URL using node:http(s) rather than
+ * fetch: fetch cannot pin the connect-time address, so a DNS rebind between
+ * validation and connect would reach an internal host. safeLookup re-checks
+ * the resolved IP on connect. Redirects are not followed (http.request never
+ * does), so a 3xx cannot bounce the request to an internal address.
+ */
+function postToWebhook(
+  url: URL,
+  body: Buffer,
+  contentType: string
+): Promise<{ status: number; body: Buffer }> {
+  const client = url.protocol === 'https:' ? https : http
+
+  return new Promise((resolve, reject) => {
+    const req = client.request(
+      url,
+      {
+        method: 'POST',
+        headers: { 'content-type': contentType, 'content-length': body.length },
+        lookup: safeLookup,
+        agent: false,
+        timeout: WEBHOOK_TIMEOUT_MS,
+      },
+      (res) => {
+        const chunks: Buffer[] = []
+        let size = 0
+        res.on('data', (chunk: Buffer) => {
+          size += chunk.length
+          if (size > MAX_RESPONSE_BYTES) {
+            req.destroy(new WebhookRequestError('Webhook response too large'))
+            return
+          }
+          chunks.push(chunk)
+        })
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks) }))
+        res.on('error', reject)
+      }
+    )
+
+    // Socket inactivity timeout plus an overall deadline, so a slow-drip
+    // response cannot hold the request open indefinitely.
+    const deadline = setTimeout(
+      () => req.destroy(new WebhookRequestError('Webhook request timed out after 30 seconds')),
+      WEBHOOK_TIMEOUT_MS
+    )
+    req.on('timeout', () =>
+      req.destroy(new WebhookRequestError('Webhook request timed out after 30 seconds'))
+    )
+    req.on('error', reject)
+    req.on('close', () => clearTimeout(deadline))
+    req.end(body)
+  })
+}
+
+function toField(value: unknown): string {
+  if (typeof value !== 'string' && typeof value !== 'number') return ''
+  return String(value).slice(0, MAX_FIELD_LENGTH)
+}
+
 /**
  * Send PDF to webhook for processing
  *
@@ -97,83 +98,88 @@ export interface WebhookResponse {
  * @param filename - Original filename
  * @param webhookUrl - External webhook endpoint URL
  * @returns Parsed invoice data from webhook
- * @throws Error if webhook fails or returns invalid data
+ * @throws Error if webhook fails or returns invalid data. Messages are
+ *   generated here (never upstream body/status text) because callers persist
+ *   and return them to the client.
  */
 export async function sendPdfToWebhook(
   pdfBuffer: Buffer,
   filename: string,
   webhookUrl: string
 ): Promise<WebhookResponse> {
-  // Validate URL to prevent SSRF attacks
-  validateWebhookUrl(webhookUrl)
-
   try {
-    // Create FormData with PDF file
+    // Validate URL to prevent SSRF attacks (resolves DNS; rejects private IPs)
+    const url = await assertSafeOutboundUrl(webhookUrl)
+
+    // Let the platform serialise the multipart body, then send the bytes
+    // through our own client.
     const formData = new FormData()
-    const blob = new Blob([pdfBuffer], { type: 'application/pdf' })
+    const blob = new Blob([new Uint8Array(pdfBuffer)], { type: 'application/pdf' })
     formData.append('file', blob, filename)
+    const encoded = new Request('http://localhost/', { method: 'POST', body: formData })
+    const body = Buffer.from(await encoded.arrayBuffer())
+    const contentType = encoded.headers.get('content-type') || 'multipart/form-data'
 
-    // Send to webhook with 30-second timeout
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 30000)
+    const response = await postToWebhook(url, body, contentType)
 
-    const response = await fetch(webhookUrl, {
-      method: 'POST',
-      body: formData,
-      signal: controller.signal,
-    })
-
-    clearTimeout(timeoutId)
-
-    if (!response.ok) {
-      throw new Error(
-        `Webhook returned ${response.status}: ${response.statusText}`
-      )
+    if (response.status >= 300 && response.status < 400) {
+      throw new WebhookRequestError(`Webhook returned a redirect (HTTP ${response.status}); redirects are not followed`)
+    }
+    if (response.status < 200 || response.status >= 300) {
+      throw new WebhookRequestError(`Webhook returned HTTP ${response.status}`)
     }
 
     // Parse JSON response - handle nested structure
-    const rawResponse = await response.json()
+    let rawResponse: any
+    try {
+      rawResponse = JSON.parse(response.body.toString('utf8'))
+    } catch {
+      throw new WebhookRequestError('Webhook returned invalid JSON')
+    }
 
     // Extract data from nested path: [0].message.content
     // The webhook returns an array with structure: [{ message: { content: { ...invoice_data } } }]
-    let data: WebhookResponse
+    let data: any
     if (Array.isArray(rawResponse) && rawResponse[0]?.message?.content) {
-      data = rawResponse[0].message.content as WebhookResponse
-    } else if (rawResponse.message?.content) {
+      data = rawResponse[0].message.content
+    } else if (rawResponse?.message?.content) {
       // Fallback for single object with nested structure
-      data = rawResponse.message.content as WebhookResponse
+      data = rawResponse.message.content
     } else {
       // Fallback to flat structure for compatibility
-      data = rawResponse as WebhookResponse
+      data = rawResponse
     }
 
     // Validate response has required fields
     if (!data || typeof data !== 'object') {
-      throw new Error('Webhook returned invalid response format')
+      throw new WebhookRequestError('Webhook returned invalid response format')
     }
 
     // Return parsed data (all fields optional, webhook may return empty strings)
+    const pages = Number(data.numb_pages)
     return {
-      invoice_number: data.invoice_number || '',
-      issue_date: data.issue_date || '',
-      supplier_name: data.supplier_name || '',
-      supplier_vat_number: data.supplier_vat_number || '',
-      total_without_vat: data.total_without_vat || '',
-      total_vat: data.total_vat || '',
-      invoice_total: data.invoice_total || '',
-      currency: data.currency || '',
-      numb_pages: data.numb_pages || 0,
-      document_type: data.document_type || '',
+      invoice_number: toField(data.invoice_number),
+      issue_date: toField(data.issue_date),
+      supplier_name: toField(data.supplier_name),
+      supplier_vat_number: toField(data.supplier_vat_number),
+      total_without_vat: toField(data.total_without_vat),
+      total_vat: toField(data.total_vat),
+      invoice_total: toField(data.invoice_total),
+      currency: toField(data.currency),
+      numb_pages: Number.isFinite(pages) && pages > 0 ? Math.floor(pages) : 0,
+      document_type: toField(data.document_type),
     }
   } catch (error) {
-    // Handle specific error types
-    if (error instanceof Error) {
-      if (error.name === 'AbortError') {
-        throw new Error('Webhook request timed out after 30 seconds')
-      }
+    if (error instanceof UnsafeUrlError || error instanceof WebhookRequestError) {
       throw new Error(`Webhook processing failed: ${error.message}`)
     }
-    throw new Error('Webhook processing failed: Unknown error')
+    // Network-level errors: report only the error code. Raw messages include
+    // resolved IPs/ports, which would turn this into a network probe.
+    const code = (error as NodeJS.ErrnoException)?.code
+    if (code === 'EUNSAFEADDR') {
+      throw new Error('Webhook processing failed: Webhook URL must point to a public address')
+    }
+    throw new Error(`Webhook processing failed: could not reach webhook${code ? ` (${code})` : ''}`)
   }
 }
 

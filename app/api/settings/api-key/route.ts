@@ -131,7 +131,6 @@ export async function POST(request: Request) {
                     error: isMissingTable
                         ? 'A tabela user_api_keys não existe. Aplique a migração 022_user_api_keys.sql no Supabase.'
                         : 'Falha ao guardar a chave.',
-                    details: error.message,
                 },
                 { status: 500 }
             )

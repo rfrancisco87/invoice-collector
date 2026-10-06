@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireApiUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { google } from 'googleapis'
+import { decryptToken } from '@/lib/gmail-tokens'
 
 /**
  * Gmail Disconnect
@@ -28,15 +29,21 @@ export async function POST() {
       .eq('user_id', user.id)
       .single()
 
-    // Try to revoke tokens with Google (non-blocking)
-    if (gmailAccount?.access_token) {
+    // Try to revoke tokens with Google (non-blocking). Prefer the refresh
+    // token: revoking it kills the whole grant, whereas a revoked access token
+    // is usually already expired anyway. Stored values are encrypted, so they
+    // must be decrypted first or Google just rejects the ciphertext.
+    if (gmailAccount) {
       try {
-        const oauth2Client = new google.auth.OAuth2(
-          process.env.GOOGLE_CLIENT_ID,
-          process.env.GOOGLE_CLIENT_SECRET
-        )
-        oauth2Client.setCredentials({ access_token: gmailAccount.access_token })
-        await oauth2Client.revokeCredentials()
+        const token =
+          decryptToken(gmailAccount.refresh_token) ?? decryptToken(gmailAccount.access_token)
+        if (token) {
+          const oauth2Client = new google.auth.OAuth2(
+            process.env.GOOGLE_CLIENT_ID,
+            process.env.GOOGLE_CLIENT_SECRET
+          )
+          await oauth2Client.revokeToken(token)
+        }
       } catch (revokeError) {
         // Log but don't fail if revocation fails
         console.warn('[Gmail Disconnect] Token revocation failed:', revokeError)

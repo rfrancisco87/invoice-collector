@@ -68,6 +68,7 @@ function GmailConnectContent() {
       redirect_mismatch: 'O URL de retorno não corresponde ao configurado na Google Cloud Console.',
       bad_client: 'Credenciais Google inválidas. Verifique GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET.',
       exchange_failed: 'A Google recusou a troca do código de autorização.',
+      state_mismatch: 'O pedido de ligação expirou ou não foi iniciado nesta sessão. Inicie a ligação de novo a partir desta página.',
       userinfo_failed: 'Autorização obtida, mas não foi possível ler o perfil Google.',
       callback_failed: 'Falha na conexão. Por favor tente novamente.',
     }

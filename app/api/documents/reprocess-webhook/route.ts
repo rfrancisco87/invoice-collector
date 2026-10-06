@@ -3,6 +3,7 @@ import { requireApiUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { sendPdfToWebhook } from '@/lib/webhook'
 import { google } from 'googleapis'
+import { getValidGmailAccessToken } from '@/lib/gmail-tokens'
 
 /**
  * POST /api/documents/reprocess-webhook
@@ -55,13 +56,17 @@ export async function POST(request: Request) {
       )
     }
 
-    // Fetch the Gmail account for OAuth
-    const { data: gmailAccount } = await supabase
+    // Fetch the Gmail account for OAuth. Forwarded documents have no
+    // gmail_account_id; fall back to the user's connected account, as
+    // inbound-email does when storing them.
+    let gmailAccountQuery = supabase
       .from('gmail_accounts')
       .select('*')
-      .eq('id', document.gmail_account_id)
       .eq('user_id', user.id)
-      .single()
+    if (document.gmail_account_id) {
+      gmailAccountQuery = gmailAccountQuery.eq('id', document.gmail_account_id)
+    }
+    const { data: gmailAccount } = await gmailAccountQuery.limit(1).single()
 
     if (!gmailAccount) {
       return NextResponse.json(
@@ -77,9 +82,11 @@ export async function POST(request: Request) {
       process.env.GOOGLE_REDIRECT_URI
     )
 
+    // Stored tokens are encrypted, so they can't go to Google as-is. The helper
+    // decrypts, refreshes if needed and persists the refreshed token encrypted;
+    // the refresh token itself never needs to leave the server.
     oauth2Client.setCredentials({
-      access_token: gmailAccount.access_token,
-      refresh_token: gmailAccount.refresh_token,
+      access_token: await getValidGmailAccessToken(supabase, gmailAccount),
     })
 
     const drive = google.drive({ version: 'v3', auth: oauth2Client })
@@ -125,8 +132,13 @@ export async function POST(request: Request) {
         classification = 'unclassified'
       }
     } catch (error) {
+      // sendPdfToWebhook only produces its own messages (HTTP status, generic
+      // network failure), never upstream body text. The length cap is a
+      // backstop since this string is stored and returned to the client.
       webhookError =
-        error instanceof Error ? error.message : 'Unknown webhook error'
+        error instanceof Error
+          ? error.message.slice(0, 200)
+          : 'Unknown webhook error'
     }
 
     // Update the document with webhook data
@@ -158,8 +170,9 @@ export async function POST(request: Request) {
       .eq('user_id', user.id)
 
     if (updateError) {
+      console.error('[Reprocess] Update failed:', updateError)
       return NextResponse.json(
-        { error: 'Failed to update document', details: updateError.message },
+        { error: 'Failed to update document' },
         { status: 500 }
       )
     }

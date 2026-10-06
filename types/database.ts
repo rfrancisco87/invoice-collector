@@ -13,6 +13,10 @@ export type FeedbackAction = 'approved' | 'rejected' | 'reclassified'
 export type UserRole = 'user' | 'admin'
 export type ProfileStatus = 'invited' | 'active' | 'suspended'
 export type InviteStatus = 'active' | 'used' | 'revoked' | 'expired'
+// Mirrors the enums in 024_classification_rules.sql (and lib/classifier/rules.ts).
+export type ClassificationRuleStage = import('@/lib/classifier/rules').RuleStage
+export type ClassificationRuleMatch = import('@/lib/classifier/rules').RuleMatchType
+export type ClassificationRuleAction = import('@/lib/classifier/rules').RuleAction
 export type DocumentSource = 'gmail' | 'inbox_folder'
 
 // Profile type for user management
@@ -64,11 +68,54 @@ export interface AdminSyncLog {
   duration_seconds: number | null
 }
 
-export interface Database {
+export type Database = {
   public: {
     Tables: {
+      classification_rules: {
+        Row: {
+          id: string
+          user_id: string
+          name: string
+          enabled: boolean
+          priority: number
+          stage: ClassificationRuleStage
+          match_type: ClassificationRuleMatch
+          match_value: string
+          action: ClassificationRuleAction
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          name: string
+          enabled?: boolean
+          priority?: number
+          stage: ClassificationRuleStage
+          match_type: ClassificationRuleMatch
+          match_value: string
+          action: ClassificationRuleAction
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          name?: string
+          enabled?: boolean
+          priority?: number
+          stage?: ClassificationRuleStage
+          match_type?: ClassificationRuleMatch
+          match_value?: string
+          action?: ClassificationRuleAction
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
+          session_version?: number
           id: string
           email: string
           full_name: string | null
@@ -83,6 +130,7 @@ export interface Database {
           updated_at: string
         }
         Insert: {
+          session_version?: number
           id: string
           email: string
           full_name?: string | null
@@ -97,6 +145,7 @@ export interface Database {
           updated_at?: string
         }
         Update: {
+          session_version?: number
           id?: string
           email?: string
           full_name?: string | null
@@ -110,6 +159,7 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
       app_credentials: {
         Row: {
@@ -130,6 +180,7 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
       user_api_keys: {
         Row: {
@@ -168,6 +219,7 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
       invite_codes: {
         Row: {
@@ -203,6 +255,7 @@ export interface Database {
           revoked_at?: string | null
           created_at?: string
         }
+        Relationships: []
       }
       password_reset_tokens: {
         Row: {
@@ -229,6 +282,7 @@ export interface Database {
           used_at?: string | null
           created_at?: string
         }
+        Relationships: []
       }
       gmail_accounts: {
         Row: {
@@ -261,6 +315,7 @@ export interface Database {
           is_primary?: boolean
           created_at?: string
         }
+        Relationships: []
       }
       user_settings: {
         Row: {
@@ -377,12 +432,14 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
       documents: {
         Row: {
+          notified_at: string | null
           id: string
           user_id: string
-          gmail_account_id: string
+          gmail_account_id: string | null
           email_message_id: string
           file_hash: string
           subject: string | null
@@ -429,9 +486,10 @@ export interface Database {
           webhook_error: string | null
         }
         Insert: {
+          notified_at?: string | null
           id?: string
           user_id: string
-          gmail_account_id: string
+          gmail_account_id?: string | null
           email_message_id: string
           file_hash: string
           subject?: string | null
@@ -478,9 +536,10 @@ export interface Database {
           webhook_error?: string | null
         }
         Update: {
+          notified_at?: string | null
           id?: string
           user_id?: string
-          gmail_account_id?: string
+          gmail_account_id?: string | null
           email_message_id?: string
           file_hash?: string
           subject?: string | null
@@ -526,6 +585,7 @@ export interface Database {
           webhook_processed_at?: string | null
           webhook_error?: string | null
         }
+        Relationships: []
       }
       sync_jobs: {
         Row: {
@@ -570,6 +630,7 @@ export interface Database {
           completed_at?: string | null
           error_message?: string | null
         }
+        Relationships: []
       }
       user_feedback: {
         Row: {
@@ -602,6 +663,7 @@ export interface Database {
           sender_domain?: string | null
           feedback_at?: string
         }
+        Relationships: []
       }
       sender_reputation: {
         Row: {
@@ -643,14 +705,17 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
     }
     Views: {
       admin_stats: {
-        Row: AdminStats
+        Row: { [K in keyof AdminStats]: AdminStats[K] }
+        Relationships: []
       }
       admin_sync_logs: {
-        Row: AdminSyncLog
+        Row: { [K in keyof AdminSyncLog]: AdminSyncLog[K] }
+        Relationships: []
       }
     }
     Functions: {
@@ -659,6 +724,7 @@ export interface Database {
         Returns: boolean
       }
     }
+    CompositeTypes: Record<string, never>
     Enums: {
       document_classification: DocumentClassification
       document_status: DocumentStatus

@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server'
 import { requireApiUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
-import { getValidAccessToken } from '@/lib/token-refresh'
+import { getValidGmailAccessToken } from '@/lib/gmail-tokens'
 import { runUserSync } from '@/lib/sync-runner'
-import { sendNewDocumentsEmail } from '@/lib/email'
+import { notifyPendingDocuments } from '@/lib/notifications'
+
+// A full sync can outlast the default timeout; dying mid-run saves documents
+// without ever sending their notification.
+export const maxDuration = 300
 
 export async function POST(request: Request) {
   try {
@@ -29,11 +33,11 @@ export async function POST(request: Request) {
     ])
 
     if (settingsResult.error || !settingsResult.data) {
-      return NextResponse.json({ error: 'User settings not found', details: settingsResult.error?.message }, { status: 404 })
+      return NextResponse.json({ error: 'User settings not found' }, { status: 404 })
     }
 
     if (gmailResult.error || !gmailResult.data) {
-      return NextResponse.json({ error: 'Gmail account not found', details: gmailResult.error?.message }, { status: 404 })
+      return NextResponse.json({ error: 'Gmail account not found' }, { status: 404 })
     }
 
     const settings = settingsResult.data
@@ -42,25 +46,9 @@ export async function POST(request: Request) {
     // Get valid access token (will refresh if needed)
     let providerToken: string
     try {
-      const tokenResult = await getValidAccessToken(
-        gmailAccount.access_token,
-        gmailAccount.refresh_token,
-        gmailAccount.token_expiry
-      )
-
-      providerToken = tokenResult.accessToken
-
-      // Update database if token was refreshed
-      if (tokenResult.needsUpdate && tokenResult.newExpiry) {
-        await supabase
-          .from('gmail_accounts')
-          .update({
-            access_token: tokenResult.accessToken,
-            token_expiry: tokenResult.newExpiry,
-          })
-          .eq('id', gmailAccount.id)
-          .eq('user_id', user.id)
-      }
+      // Stored tokens are encrypted; this decrypts, refreshes if needed and
+      // persists any refreshed token encrypted.
+      providerToken = await getValidGmailAccessToken(supabase, gmailAccount)
     } catch (error) {
       return NextResponse.json({
         error: 'Failed to get valid access token',
@@ -152,21 +140,18 @@ export async function POST(request: Request) {
         .eq('id', syncJob.id)
         .eq('user_id', user.id)
 
-      if (settings.email_notifications_enabled && newDocuments.length > 0) {
-        const targetEmail = settings.notification_email?.trim() || user.email
-
-        if (targetEmail) {
-          try {
-            await sendNewDocumentsEmail(targetEmail, newDocuments, settings.drive_folder_id)
-            processingLog.push(`✓ Notification email sent to ${targetEmail}`)
-          } catch (emailError) {
-            const emailErrorMessage =
-              emailError instanceof Error ? emailError.message : String(emailError)
-            processingLog.push(`⚠ Failed to send notification email: ${emailErrorMessage}`)
-          }
-        } else {
-          processingLog.push('⚠ Email notifications enabled but no destination email configured')
-        }
+      // Same path as the cron: also picks up documents an earlier run saved
+      // but failed to notify about.
+      const notification = await notifyPendingDocuments(
+        supabase,
+        user.id,
+        settings,
+        newDocuments.map((d) => d.id)
+      )
+      if (notification.sent) {
+        processingLog.push(`✓ Notification email sent (${notification.count} documents)`)
+      } else if (notification.count > 0) {
+        processingLog.push(`⚠ Notification email not sent: ${notification.reason}`)
       }
 
       return NextResponse.json({

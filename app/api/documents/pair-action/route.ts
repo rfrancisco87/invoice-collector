@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireApiUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { getDriveClient } from '@/lib/google-drive'
+import { getValidGmailAccessToken } from '@/lib/gmail-tokens'
 
 /**
  * Resolve an invoice/receipt pair the user was asked to decide.
@@ -95,12 +96,14 @@ export async function POST(request: Request) {
                 try {
                     const { data: gmailAccount } = await supabase
                         .from('gmail_accounts')
-                        .select('access_token')
+                        .select('id, user_id, access_token, refresh_token, token_expiry')
                         .eq('user_id', user.id)
                         .maybeSingle()
 
-                    if ((gmailAccount as any)?.access_token) {
-                        const drive = await getDriveClient((gmailAccount as any).access_token)
+                    if (gmailAccount) {
+                        // Stored tokens are encrypted; never pass them to Drive raw.
+                        const accessToken = await getValidGmailAccessToken(supabase, gmailAccount)
+                        const drive = await getDriveClient(accessToken)
                         await drive.files.delete({ fileId: target.drive_file_id })
                     }
                 } catch (err: any) {

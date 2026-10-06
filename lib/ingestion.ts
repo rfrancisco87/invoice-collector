@@ -9,6 +9,7 @@ import {
     runPrefilter,
 } from '@/lib/classifier'
 import { checkAutoDecision } from '@/lib/auto-decision'
+import { trashInboxFile } from '@/lib/drive-inbox'
 import { Readable } from 'stream'
 
 export interface IngestionResult {
@@ -24,6 +25,12 @@ export interface IngestionContext {
     settings: any
     gmailAccount?: any // Optional now
     providerToken: string
+    /**
+     * Skip the learning rules (hash/sender auto-reject). Set when the user
+     * explicitly restores a document — re-running the rule that rejected it
+     * would just reject it again.
+     */
+    skipAutoDecision?: boolean
 }
 
 export async function ingestDocument(
@@ -46,6 +53,13 @@ export async function ingestDocument(
     try {
         log.push(`Ingesting file: ${filename} from ${metadata.source}`)
 
+        // An empty buffer is a failed download, not a document. Its hash is the
+        // SHA-256 of nothing, which matches any earlier empty download — so it
+        // would be treated as a duplicate and the inbox original removed.
+        if (fileData.length === 0) {
+            throw new Error(`Empty file content for ${filename}`)
+        }
+
         // 1. Calculate Hash
         const fileHash = calculateFileHash(fileData)
         log.push(`Hash: ${fileHash.substring(0, 16)}...`)
@@ -60,7 +74,8 @@ export async function ingestDocument(
             .select('id, filename')
             .eq('user_id', user.id)
             .eq('file_hash', fileHash)
-            .single()
+            .limit(1)
+            .maybeSingle()
 
         if (existingDoc) {
             log.push(`⊘ DUPLICATE - File already exists: ${existingDoc.filename}`)
@@ -95,7 +110,7 @@ export async function ingestDocument(
             if (metadata.source === 'inbox_folder' && metadata.inboxFileId) {
                 try {
                     const drive = await getDriveClient(providerToken)
-                    await drive.files.delete({ fileId: metadata.inboxFileId })
+                    await trashInboxFile(drive, metadata.inboxFileId)
                 } catch (err: any) {
                     const status = err?.code ?? err?.response?.status
                     if (status !== 404) {
@@ -114,11 +129,13 @@ export async function ingestDocument(
         // Only the 'reject' branch is acted on here — auto-approve requires
         // the webhook extraction data and the approved-folder flow, which is
         // deferred to a follow-up (the setting flag exists, the action does not).
-        const autoDecision = await checkAutoDecision(supabase, {
+        const autoDecision = ctx.skipAutoDecision ? null : await checkAutoDecision(supabase, {
             userId: user.id,
             fileHash,
             senderDomain: metadata.senderDomain,
+            source: metadata.source,
             settings: {
+                notification_email: settings.notification_email,
                 auto_reject_enabled: settings.auto_reject_enabled,
                 auto_approve_enabled: settings.auto_approve_enabled,
             },
@@ -163,7 +180,7 @@ export async function ingestDocument(
             if (metadata.source === 'inbox_folder' && metadata.inboxFileId) {
                 try {
                     const drive = await getDriveClient(providerToken)
-                    await drive.files.delete({ fileId: metadata.inboxFileId })
+                    await trashInboxFile(drive, metadata.inboxFileId)
                 } catch (err: any) {
                     const status = err?.code ?? err?.response?.status
                     if (status !== 404) {

@@ -3,6 +3,7 @@ import { applyLoginSession } from '@/lib/auth'
 import { hashPassword } from '@/lib/password'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { checkPasswordPolicy, normaliseInviteCode } from '@/lib/account-tokens'
+import { getClientIp, isRateLimited, rateLimitResponse } from '@/lib/rate-limit'
 
 /**
  * Invite-only signup.
@@ -22,6 +23,15 @@ import { checkPasswordPolicy, normaliseInviteCode } from '@/lib/account-tokens'
  */
 export async function POST(request: Request) {
     try {
+        // Bounds invite-code guessing and account-creation spam from one source.
+        if (
+            await isRateLimited([
+                { key: `signup:ip:${getClientIp(request)}`, windowSeconds: 60 * 60, max: 10 },
+            ])
+        ) {
+            return rateLimitResponse()
+        }
+
         const body = await request.json()
         const { email, password, fullName, inviteCode } = body ?? {}
 
@@ -118,8 +128,10 @@ export async function POST(request: Request) {
             })
         }
 
-        // handle_new_user() creates the profile row on insert into auth.users.
-        // Stamp the invite trail onto it.
+        // handle_new_user() creates the profile row on insert into auth.users,
+        // as 'invited' (migration 028) so that a direct Supabase Auth signup
+        // yields an inert profile. Only here, with the invite validated, does
+        // the account become 'active'. Stamp the invite trail onto it too.
         const { error: profileError } = await supabase
             .from('profiles')
             // @ts-ignore - Supabase row types infer as never across this project

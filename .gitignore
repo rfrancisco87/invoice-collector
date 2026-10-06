@@ -84,3 +84,6 @@ next-env.d.ts
 # OS
 # ===================================
 Thumbs.db
+
+# Claude Code personal settings (local paths, one-off approvals)
+.claude/settings.local.json

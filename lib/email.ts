@@ -6,6 +6,19 @@ if (!process.env.RESEND_API_KEY) {
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
+/**
+ * Filenames and senders come from whoever emailed the user, so they are
+ * attacker-controlled. Escape them before they land in our own trusted mail.
+ */
+function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 interface Document {
   id: string
   filename: string
@@ -19,18 +32,21 @@ interface Document {
 export async function sendNewDocumentsEmail(
   toEmail: string,
   documents: Document[],
-  driveFolderId: string
+  driveFolderId: string | null
 ) {
   try {
-    const driveUrl = `https://drive.google.com/drive/folders/${driveFolderId}`
+    // No folder configured yet: point at the dashboard rather than a dead link.
+    const driveUrl = driveFolderId
+      ? `https://drive.google.com/drive/folders/${encodeURIComponent(driveFolderId)}`
+      : `${process.env.NEXT_PUBLIC_APP_URL}/dashboard`
 
     const documentsList = documents
       .map(
         (doc, index) => `
       <tr>
         <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">${index + 1}</td>
-        <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">${doc.filename}</td>
-        <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">${doc.sender}</td>
+        <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">${escapeHtml(doc.filename)}</td>
+        <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">${escapeHtml(doc.sender)}</td>
         <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">
           <span style="display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; background-color: ${
             doc.final_classification === 'invoice'
