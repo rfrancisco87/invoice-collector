@@ -51,20 +51,10 @@ export function RejectedDocumentList({ documents }: RejectedDocumentListProps) {
       const body = await response.json()
       if (!response.ok) throw new Error(body.error || 'Falha ao restaurar')
 
-      // Manual rejections are restored in place (file untrashed in Drive).
-      // Auto-rejections are re-ingested, and the source decides whether that
-      // works: inbox-folder originals were deleted on auto-reject, so
-      // restoration only clears the block — the user needs to re-upload.
-      if (body.mode === 'in_place') {
-        toast.success('Restaurado. O documento voltou para pendentes.')
-      } else if (doc.source === 'inbox_folder') {
-        toast('Restaurado. O ficheiro original já não está no Drive — tem de voltar a carregá-lo.', {
-          icon: 'ℹ️',
-          duration: 6000,
-        })
-      } else {
-        toast.success('Restaurado. Será reprocessado na próxima sincronização.')
-      }
+      // Both paths end with the document back in the pending list: manual
+      // rejections are untrashed in place, auto-rejections are fetched again
+      // from Gmail / the inbox original and reprocessed.
+      toast.success('Restaurado. O documento voltou para pendentes.')
       router.refresh()
     } catch (error) {
       console.error('Restore error:', error)
@@ -168,7 +158,7 @@ export function RejectedDocumentList({ documents }: RejectedDocumentListProps) {
                       </TooltipTrigger>
                       <TooltipContent>
                         {isAuto
-                          ? 'Reverter rejeição automática. Próxima sincronização irá reprocessar o ficheiro.'
+                          ? 'Reverter rejeição automática. O ficheiro é reprocessado e volta para pendentes.'
                           : 'Reverter rejeição. O documento volta para pendentes.'}
                       </TooltipContent>
                     </Tooltip>

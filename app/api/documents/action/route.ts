@@ -3,6 +3,7 @@ import { requireApiUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { getDriveClient } from '@/lib/google-drive'
 import { getValidGmailAccessToken } from '@/lib/gmail-tokens'
+import { trashInboxFile } from '@/lib/drive-inbox'
 import {
   DEFAULT_APPROVED_FILENAME_TEMPLATE,
   renderApprovedFilename,
@@ -262,10 +263,8 @@ export async function POST(request: Request) {
     if (document.source === 'inbox_folder' && document.inbox_file_id) {
       try {
         // @ts-ignore
-        await drive.files.delete({
-          // @ts-ignore
-          fileId: document.inbox_file_id,
-        })
+        // @ts-ignore
+        await trashInboxFile(drive, document.inbox_file_id)
         // @ts-ignore
         console.log(`[Action] Cleaned up original inbox file ${document.inbox_file_id}`)
       } catch (cleanupError: any) {

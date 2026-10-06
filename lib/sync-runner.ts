@@ -22,7 +22,7 @@ import {
     type EmailAttachment,
 } from '@/lib/gmail'
 import { getDriveClient } from '@/lib/google-drive'
-import { scanInboxFolder } from '@/lib/drive-inbox'
+import { scanInboxFolder, trashInboxFile } from '@/lib/drive-inbox'
 import { ingestDocument } from '@/lib/ingestion'
 import { resolveSiblingsForMessage } from '@/lib/classifier/resolve-siblings'
 import type { PairPreference } from '@/lib/classifier/pairing'
@@ -294,7 +294,7 @@ export async function runUserSync(ctx: SyncRunnerContext): Promise<SyncRunnerRes
                         // removed once the file is safely ingested or recognised
                         // as a duplicate.
                         try {
-                            await drive.files.delete({ fileId: doc.driveFileId })
+                            await trashInboxFile(drive, doc.driveFileId)
                         } catch (error) {
                             log.push(`⚠ Failed to remove ${doc.filename} from Inbox: ${errorText(error)}`)
                         }

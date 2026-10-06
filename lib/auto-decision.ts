@@ -38,7 +38,15 @@ export interface AutoDecisionInput {
     userId: string
     fileHash: string
     senderDomain: string | null
+    /**
+     * Where the document came from. Sender reputation only means something for
+     * mail sent directly by a supplier; inbox-folder files all carry the
+     * placeholder domain drive.google.com, so one rejection there counted
+     * against every file the user ever drops in the folder.
+     */
+    source?: 'gmail' | 'inbox_folder' | 'forwarding' | 'upload'
     settings: {
+        notification_email?: string | null
         auto_reject_enabled?: boolean | null
         auto_approve_enabled?: boolean | null
     }
@@ -80,6 +88,7 @@ export async function checkAutoDecision(
 
     // Rules 2 & 3 need the sender domain.
     if (!senderDomain) return null
+    if (input.source && input.source !== 'gmail') return null
 
     const { data: reputation } = await supabase
         .from('sender_reputation')
@@ -89,8 +98,19 @@ export async function checkAutoDecision(
         .maybeSingle()
 
     if (!reputation) return null
+    if (!reputation.is_blocked && !reputation.is_trusted) return null
 
-    if (autoRejectEnabled && reputation.is_blocked) {
+    // Mail from the user's own domains is forwarded documents from many
+    // different suppliers (and a shared mailbox domain like gmail.com is
+    // thousands of unrelated senders), so a domain-wide verdict would block
+    // real invoices — which is how forwarded invoices were silently lost.
+    if (await isNonSupplierDomain(supabase, userId, senderDomain, settings.notification_email)) {
+        return null
+    }
+
+    // A sender the user has approved before is never auto-blocked, even if
+    // the stored flag says so (rows written before migration 031).
+    if (autoRejectEnabled && reputation.is_blocked && !reputation.is_trusted) {
         return {
             action: 'reject',
             reason: 'sender_blocked',
@@ -107,4 +127,41 @@ export async function checkAutoDecision(
     }
 
     return null
+}
+
+/** Shared mailbox providers: the domain says nothing about who sent the mail. */
+const PUBLIC_MAIL_DOMAINS = new Set([
+    'gmail.com', 'googlemail.com', 'outlook.com', 'outlook.pt', 'hotmail.com',
+    'hotmail.pt', 'live.com', 'live.com.pt', 'msn.com', 'icloud.com', 'me.com',
+    'mac.com', 'yahoo.com', 'yahoo.com.br', 'aol.com', 'proton.me',
+    'protonmail.com', 'gmx.com', 'gmx.net', 'sapo.pt', 'iol.pt', 'clix.pt',
+    'netcabo.pt', 'mail.com', 'zoho.com',
+])
+
+function domainOf(email: string | null | undefined): string | null {
+    const domain = email?.split('@')[1]?.trim().toLowerCase()
+    return domain || null
+}
+
+/**
+ * True when the domain belongs to the user (login, connected Gmail or
+ * notification address) or is a public mailbox provider.
+ */
+async function isNonSupplierDomain(
+    supabase: SupabaseClient,
+    userId: string,
+    senderDomain: string,
+    notificationEmail: string | null | undefined,
+): Promise<boolean> {
+    const domain = senderDomain.toLowerCase()
+    if (PUBLIC_MAIL_DOMAINS.has(domain)) return true
+    if (domainOf(notificationEmail) === domain) return true
+
+    const [{ data: profile }, { data: accounts }] = await Promise.all([
+        supabase.from('profiles').select('email').eq('id', userId).maybeSingle(),
+        supabase.from('gmail_accounts').select('email').eq('user_id', userId),
+    ])
+
+    const ownEmails = [(profile as any)?.email, ...((accounts as any[]) ?? []).map((a) => a.email)]
+    return ownEmails.some((email) => domainOf(email) === domain)
 }

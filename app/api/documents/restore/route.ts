@@ -3,6 +3,7 @@ import { requireApiUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { getDriveClient } from '@/lib/google-drive'
 import { getValidGmailAccessToken } from '@/lib/gmail-tokens'
+import { restoreAutoRejectedDocument } from '@/lib/restore-document'
 
 /**
  * Restore a rejected document.
@@ -10,20 +11,9 @@ import { getValidGmailAccessToken } from '@/lib/gmail-tokens'
  * Two flavours, depending on how the document was rejected:
  *
  * Auto-rejected (auto_action_reason IS NOT NULL)
- *   Delete the row entirely. Auto-rejected documents never made it to Drive
- *   and never went through the webhook, so there's nothing to "un-reject" in
- *   place — the cleanest path is to let the next sync re-ingest the source.
- *
- *   Caveats the UI must communicate:
- *     - Gmail source: the attachment is still in the mailbox and will re-ingest
- *       on the next sync. Since we deleted the rejected row, the
- *       file_hash_rejected rule will no longer match.
- *     - Inbox-folder source: the original file in the Drive inbox was deleted
- *       during auto-reject cleanup, so restoration will not bring it back. The
- *       user must re-upload manually.
- *     - If the rejection was triggered by sender_blocked, the sender's
- *       reputation is unchanged. The next ingestion will auto-reject again
- *       unless the user separately clears the sender's block.
+ *   The file never reached Drive, so it is fetched again from its source (the
+ *   Gmail message, or the trashed inbox original) and ingested as pending.
+ *   See restoreAutoRejectedDocument.
  *
  * Manually rejected (auto_action_reason IS NULL)
  *   The reject action moves the Drive file to the trash, so we untrash it
@@ -72,19 +62,15 @@ export async function POST(request: Request) {
             return restoreManualRejection(supabase, user.id, doc)
         }
 
-        const { error: deleteError } = await supabase
-            .from('documents')
-            .delete()
-            .eq('id', documentId)
-            .eq('user_id', user.id)
-
-        if (deleteError) {
-            return NextResponse.json({ error: deleteError.message }, { status: 500 })
+        const outcome = await restoreAutoRejectedDocument(supabase, user.id, documentId)
+        if (!outcome.ok) {
+            return NextResponse.json({ error: outcome.error }, { status: outcome.status })
         }
 
         return NextResponse.json({
             success: true,
-            mode: 'reingest',
+            mode: 'reingested',
+            documentId: outcome.documentId,
             // @ts-ignore
             source: doc.source,
         })
@@ -196,10 +182,11 @@ async function undoRejectionFeedback(
             .update({
                 rejection_count: rejectionCount,
                 reputation_score: approvalCount - rejectionCount,
-                is_blocked: rejectionCount >= 2,
+                is_blocked: rejectionCount >= 2 && approvalCount === 0,
             })
             // @ts-ignore
             .eq('id', rep.id)
+            .eq('user_id', userId)
     } catch (err) {
         console.error('[Restore] Failed to undo rejection feedback:', err)
     }

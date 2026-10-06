@@ -209,37 +209,7 @@ export async function scanGmailForInvoices(
       if (!message.id) continue
 
       try {
-        const fullMessage = await gmail.users.messages.get({
-          userId: 'me',
-          id: message.id,
-          format: 'full',
-        })
-
-        const headers = fullMessage.data.payload?.headers || []
-        const subject = headers.find(h => h.name?.toLowerCase() === 'subject')?.value || ''
-        const from = headers.find(h => h.name?.toLowerCase() === 'from')?.value || ''
-        const dateHeader = headers.find(h => h.name?.toLowerCase() === 'date')?.value || ''
-
-        // Extract sender email
-        const senderMatch = from.match(/<(.+)>/) || from.match(/^(.+)$/)
-        const senderEmail = senderMatch ? senderMatch[1].trim() : from
-        const senderDomain = extractDomain(senderEmail)
-
-        // Parse date
-        const receivedDate = dateHeader ? new Date(dateHeader) : new Date()
-
-        // Extract PDF attachments
-        const parts = fullMessage.data.payload?.parts || []
-        await extractAttachments(
-          gmail,
-          message.id,
-          parts,
-          attachments,
-          subject,
-          senderEmail,
-          senderDomain,
-          receivedDate
-        )
+        attachments.push(...(await fetchMessageAttachments(gmail, message.id)))
       } catch (error) {
         console.error(`Error processing message ${message.id}:`, error)
       }
@@ -252,6 +222,50 @@ export async function scanGmailForInvoices(
   debugInfo.pdfAttachmentsFound = attachments.length
 
   return { attachments, debug: debugInfo }
+}
+
+/**
+ * Download every PDF attachment of one Gmail message, with the sender/subject
+ * metadata ingestion needs. Used by the sync scan and by restore, which
+ * re-fetches an auto-rejected attachment straight from the mailbox instead of
+ * waiting for a sync whose lookback window may no longer reach the email.
+ */
+export async function fetchMessageAttachments(
+  gmail: any,
+  messageId: string
+): Promise<EmailAttachment[]> {
+  const fullMessage = await gmail.users.messages.get({
+    userId: 'me',
+    id: messageId,
+    format: 'full',
+  })
+
+  const headers: any[] = fullMessage.data.payload?.headers || []
+  const subject = headers.find(h => h.name?.toLowerCase() === 'subject')?.value || ''
+  const from = headers.find(h => h.name?.toLowerCase() === 'from')?.value || ''
+  const dateHeader = headers.find(h => h.name?.toLowerCase() === 'date')?.value || ''
+
+  // Extract sender email
+  const senderMatch = from.match(/<(.+)>/) || from.match(/^(.+)$/)
+  const senderEmail = senderMatch ? senderMatch[1].trim() : from
+  const senderDomain = extractDomain(senderEmail)
+
+  // Parse date
+  const receivedDate = dateHeader ? new Date(dateHeader) : new Date()
+
+  // Extract PDF attachments
+  const attachments: EmailAttachment[] = []
+  await extractAttachments(
+    gmail,
+    messageId,
+    fullMessage.data.payload?.parts || [],
+    attachments,
+    subject,
+    senderEmail,
+    senderDomain,
+    receivedDate
+  )
+  return attachments
 }
 
 async function extractAttachments(

@@ -119,23 +119,13 @@ export async function scanInboxFolder(
 }
 
 /**
- * Delete a file from Google Drive
- * @param accessToken - Google OAuth access token
- * @param fileId - Drive file ID to delete
+ * Remove a file from the inbox folder by moving it to the Drive trash.
+ *
+ * Never a hard delete: the inbox original is the only copy of a file that was
+ * auto-rejected or pre-filtered (neither is uploaded to Pending), so deleting
+ * it made those decisions unrecoverable. Trashed files stay restorable for 30
+ * days, which is what lets the Rejected page bring them back.
  */
-export async function deleteInboxFile(
-    accessToken: string,
-    fileId: string
-): Promise<void> {
-    const auth = new google.auth.OAuth2()
-    auth.setCredentials({ access_token: accessToken })
-    const drive = google.drive({ version: 'v3', auth })
-
-    try {
-        await drive.files.delete({ fileId })
-        console.log(`[InboxScanner] Deleted file ${fileId} from inbox`)
-    } catch (error) {
-        console.error(`[InboxScanner] Error deleting file ${fileId}:`, error)
-        throw new Error(`Failed to delete inbox file: ${error instanceof Error ? error.message : 'Unknown error'}`)
-    }
+export async function trashInboxFile(drive: drive_v3.Drive, fileId: string): Promise<void> {
+    await drive.files.update({ fileId, requestBody: { trashed: true } })
 }
