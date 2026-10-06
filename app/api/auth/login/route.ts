@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server'
 import { applyLoginSession } from '@/lib/auth'
-import { verifyPassword } from '@/lib/password'
+import { hashPassword, verifyPassword } from '@/lib/password'
+
+// Compared against when the account is unknown or inactive, so those requests
+// pay the same scrypt cost as a real one and response time doesn't reveal
+// whether an address is registered.
+const DUMMY_PASSWORD_HASH = hashPassword('invoice-collector-dummy-password')
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getClientIp, isRateLimited, rateLimitResponse } from '@/lib/rate-limit'
 
@@ -40,6 +45,7 @@ export async function POST(request: Request) {
       .maybeSingle()
 
     if (!profile) {
+      verifyPassword(password, DUMMY_PASSWORD_HASH)
       return NextResponse.json(
         { error: 'Invalid email or password.' },
         { status: 401 }
@@ -54,6 +60,7 @@ export async function POST(request: Request) {
     // (e.g. an 'invited' profile left by a direct Supabase Auth signup) is
     // refused too; getUserById would reject its session anyway.
     if ((profile as any).status !== 'active') {
+      verifyPassword(password, DUMMY_PASSWORD_HASH)
       return NextResponse.json(
         { error: 'Invalid email or password.' },
         { status: 401 }

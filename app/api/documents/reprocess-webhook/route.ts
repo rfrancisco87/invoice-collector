@@ -170,8 +170,9 @@ export async function POST(request: Request) {
       .eq('user_id', user.id)
 
     if (updateError) {
+      console.error('[Reprocess] Update failed:', updateError)
       return NextResponse.json(
-        { error: 'Failed to update document', details: updateError.message },
+        { error: 'Failed to update document' },
         { status: 500 }
       )
     }

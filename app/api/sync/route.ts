@@ -33,11 +33,11 @@ export async function POST(request: Request) {
     ])
 
     if (settingsResult.error || !settingsResult.data) {
-      return NextResponse.json({ error: 'User settings not found', details: settingsResult.error?.message }, { status: 404 })
+      return NextResponse.json({ error: 'User settings not found' }, { status: 404 })
     }
 
     if (gmailResult.error || !gmailResult.data) {
-      return NextResponse.json({ error: 'Gmail account not found', details: gmailResult.error?.message }, { status: 404 })
+      return NextResponse.json({ error: 'Gmail account not found' }, { status: 404 })
     }
 
     const settings = settingsResult.data

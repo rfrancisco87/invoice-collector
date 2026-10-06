@@ -50,13 +50,13 @@ export async function POST(request: Request) {
 
         if (error) {
             console.error('Seeding error', error)
-            return NextResponse.json({ error: 'Failed to seed data: ' + error.message }, { status: 500 })
+            return NextResponse.json({ error: 'Failed to seed data' }, { status: 500 })
         }
 
         return NextResponse.json({ success: true, document: data })
 
     } catch (error: any) {
         console.error('Seed route fatal:', error)
-        return NextResponse.json({ error: 'Internal Server Error: ' + error.message }, { status: 500 })
+        return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
     }
 }

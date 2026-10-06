@@ -336,10 +336,6 @@ export async function PATCH(request: Request) {
       console.error('[Settings API] Supabase error:', error)
       return NextResponse.json({
         error: 'Failed to update settings',
-        details: error.message,
-        code: error.code,
-        // @ts-ignore - hint exists in some Supabase error types
-        hint: error.hint
       }, { status: 500 })
     }
 

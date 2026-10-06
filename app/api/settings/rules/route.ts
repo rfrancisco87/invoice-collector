@@ -122,7 +122,7 @@ export async function GET() {
         if (error) {
             console.error('[Rules] List failed:', error)
             return NextResponse.json(
-                { error: 'Falha ao carregar regras.', details: error.message },
+                { error: 'Falha ao carregar regras.' },
                 { status: 500 }
             )
         }
@@ -158,7 +158,7 @@ export async function POST(request: Request) {
         if (error) {
             console.error('[Rules] Create failed:', error)
             return NextResponse.json(
-                { error: 'Falha ao criar regra.', details: error.message },
+                { error: 'Falha ao criar regra.' },
                 { status: 500 }
             )
         }
@@ -211,7 +211,7 @@ export async function PATCH(request: Request) {
         if (error) {
             console.error('[Rules] Update failed:', error)
             return NextResponse.json(
-                { error: 'Falha ao atualizar regra.', details: error.message },
+                { error: 'Falha ao atualizar regra.' },
                 { status: 500 }
             )
         }
@@ -248,7 +248,7 @@ export async function DELETE(request: Request) {
         if (error) {
             console.error('[Rules] Delete failed:', error)
             return NextResponse.json(
-                { error: 'Falha ao remover regra.', details: error.message },
+                { error: 'Falha ao remover regra.' },
                 { status: 500 }
             )
         }

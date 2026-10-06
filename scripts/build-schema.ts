@@ -88,6 +88,7 @@ const ORDER: string[] = [
     'supabase/migrations/029_auth_rate_limits.sql',
     'supabase/migrations/030_protect_subscription_tier.sql',
     'supabase/migrations/031_sender_block_requires_no_approvals.sql',
+    'supabase/migrations/032_pin_security_definer_search_path.sql',
 ]
 
 /**
