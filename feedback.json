@@ -1,0 +1,12 @@
+{
+  "productId": "invoice-collector",
+  "name": "Invoice Collector",
+  "domains": [],
+  "whatsappGroups": [],
+  "maintenanceOnly": false,
+  "deploy": {
+    "provider": "vercel",
+    "project": "invoice-collector",
+    "productionBranch": "main"
+  }
+}
