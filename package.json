@@ -41,7 +41,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.3",
-    "@types/node": "^22.10.2",
+    "@types/node": "^24",
     "@types/react": "^18.3.17",
     "@types/react-dom": "^18.3.5",
     "autoprefixer": "^10.4.20",
@@ -58,5 +58,8 @@
     "postcss": "$postcss",
     "postcss-selector-parser": "^7.1.6",
     "postcss-nested": "^8.0.1"
+  },
+  "engines": {
+    "node": "24.x"
   }
 }
