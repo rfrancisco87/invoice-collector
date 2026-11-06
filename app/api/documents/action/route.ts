@@ -8,6 +8,11 @@ import {
   DEFAULT_APPROVED_FILENAME_TEMPLATE,
   renderApprovedFilename,
 } from '@/lib/filename-template'
+import {
+  findOrCreateChildFolder,
+  moveFileToFolder,
+  resolveApprovedMonthFolder,
+} from '@/lib/drive-folders'
 import { Database } from '@/types/database'
 
 export async function POST(request: Request) {
@@ -74,90 +79,15 @@ export async function POST(request: Request) {
     const drive = await getDriveClient(await getValidGmailAccessToken(supabase, gmailAccount))
 
     if (action === 'approve') {
-      // Move to Approved/MM-YYYY folder
       // @ts-ignore
-      const date = new Date(document.received_date)
-      const monthYear = `${String(date.getMonth() + 1).padStart(2, '0')}-${date.getFullYear()}`
+      const approved = await resolveApprovedMonthFolder(drive, settings, document.received_date)
 
-      // Resolve the parent of the MM-YYYY subfolder.
-      // If the user picked an existing approved folder, place MM-YYYY inside it.
-      // Otherwise create/reuse an "Approved" folder under their main Drive folder.
-      let approvedParentId: string
-      let approvedParentName: string
-
-      // @ts-ignore
-      if (settings.approved_folder_mode === 'existing' && settings.approved_folder_id) {
-        // @ts-ignore
-        approvedParentId = settings.approved_folder_id
-        // @ts-ignore
-        approvedParentName = settings.approved_folder_name || 'Approved'
-      } else {
-        // @ts-ignore
-        const approvedParentResponse = await drive.files.list({
-          // @ts-ignore
-          q: `name='Approved' and '${settings.drive_folder_id}' in parents and trashed=false`,
-          fields: 'files(id)',
-        })
-
-        let resolvedId = approvedParentResponse.data.files?.[0]?.id
-        if (!resolvedId) {
-          // @ts-ignore
-          const createApproved = await drive.files.create({
-            requestBody: {
-              name: 'Approved',
-              mimeType: 'application/vnd.google-apps.folder',
-              // @ts-ignore
-              parents: [settings.drive_folder_id],
-            },
-            fields: 'id',
-          })
-          resolvedId = createApproved.data.id!
-        }
-        approvedParentId = resolvedId
-        approvedParentName = 'Approved'
-      }
-
-      const approvedFolderName = `${approvedParentName}/${monthYear}`
-
-      // Find or create month folder
-      let monthFolderResponse = await drive.files.list({
-        q: `name='${monthYear}' and '${approvedParentId}' in parents and trashed=false`,
-        fields: 'files(id)',
-      })
-
-      let monthFolderId = monthFolderResponse.data.files?.[0]?.id
-
-      if (!monthFolderId) {
-        const createMonth = await drive.files.create({
-          requestBody: {
-            name: monthYear,
-            mimeType: 'application/vnd.google-apps.folder',
-            parents: [approvedParentId],
-          },
-          fields: 'id',
-        })
-        monthFolderId = createMonth.data.id!
-      }
-
-      // Move file: resolve the file's actual current parents and remove them.
-      // The previous implementation hardcoded `removeParents: 'root'`, which is
-      // wrong for files synced from the inbox folder (their parent is the
-      // "Pending Approval" folder, not 'root'). On Workspace accounts that
-      // permitted multi-parent files, this left the file in two places.
-      //
-      // We also rename the file at the same time using the user's filename
-      // template, so the move + rename happen in a single Drive API call.
+      // Move the file out of whatever folder it is in (Pending Approval, or the
+      // inbox folder's pending location) and rename it with the user's template
+      // in the same Drive call.
       let finalFilename: string | null = null
       // @ts-ignore
       if (document.drive_file_id) {
-        // @ts-ignore
-        const fileMeta = await drive.files.get({
-          // @ts-ignore
-          fileId: document.drive_file_id,
-          fields: 'parents',
-        })
-        const currentParents = (fileMeta.data.parents || []).join(',')
-
         // @ts-ignore
         const template = settings.approved_filename_template || DEFAULT_APPROVED_FILENAME_TEMPLATE
         const renamed = renderApprovedFilename(
@@ -167,29 +97,25 @@ export async function POST(request: Request) {
           // @ts-ignore
           document.filename,
         )
-
-        const updateBody: any = {
-          // @ts-ignore
-          fileId: document.drive_file_id,
-          addParents: monthFolderId,
-          removeParents: currentParents,
-          fields: 'id, parents, name',
-        }
         // @ts-ignore
         if (renamed && renamed !== document.filename) {
-          updateBody.requestBody = { name: renamed }
           finalFilename = renamed
         }
 
-        // @ts-ignore
-        await drive.files.update(updateBody)
+        await moveFileToFolder(
+          drive,
+          // @ts-ignore
+          document.drive_file_id,
+          approved.folderId,
+          finalFilename ? { name: finalFilename } : undefined,
+        )
       }
 
       // Update document status
       const documentUpdate: any = {
         status: 'approved' as const,
         approved_at: new Date().toISOString(),
-        drive_folder_path: approvedFolderName,
+        drive_folder_path: approved.path,
       }
       if (finalFilename) {
         documentUpdate.filename = finalFilename
@@ -220,6 +146,19 @@ export async function POST(request: Request) {
       // be reverted from the Rejected page. Drive purges trash after 30 days.
       // @ts-ignore
       if (document.drive_file_id) {
+        // A trashed file keeps its parent, so an approved file trashed in place
+        // would still be listed under Approved/MM-YYYY by anything that doesn't
+        // filter out trashed files (Drive sync, accounting integrations). Move
+        // it back to Pending Approval first: same state as a normal rejection.
+        // Restore moves it back to the approved folder.
+        // @ts-ignore
+        if (document.status === 'approved') {
+          // @ts-ignore
+          const pendingId = await findOrCreateChildFolder(drive, 'Pending Approval', settings.drive_folder_id)
+          // @ts-ignore
+          await moveFileToFolder(drive, document.drive_file_id, pendingId)
+        }
+
         // @ts-ignore
         await drive.files.update({
           // @ts-ignore

@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getDriveClient } from '@/lib/google-drive'
 import { getValidGmailAccessToken } from '@/lib/gmail-tokens'
 import { restoreAutoRejectedDocument } from '@/lib/restore-document'
+import { moveFileToFolder, resolveApprovedMonthFolder } from '@/lib/drive-folders'
 
 /**
  * Restore a rejected document.
@@ -17,11 +18,11 @@ import { restoreAutoRejectedDocument } from '@/lib/restore-document'
  *
  * Manually rejected (auto_action_reason IS NULL)
  *   The reject action moves the Drive file to the trash, so we untrash it
- *   (it returns to the folder it was in), put the row back to the status it
- *   had before, and undo the rejection's effect on sender reputation.
- *   Documents rejected from the Approved page keep approved_at, and their
- *   file untrashes back into Approved/MM-YYYY, so they return to 'approved';
- *   everything else returns to 'pending'.
+ *   (it returns to Pending Approval), put the row back to the status it had
+ *   before, and undo the rejection's effect on sender reputation.
+ *   Documents rejected from the Approved page keep approved_at; their file is
+ *   moved back into Approved/MM-YYYY and they return to 'approved'. Everything
+ *   else returns to 'pending'.
  *   Drive purges trash after 30 days, and rejections made before the reject
  *   action switched to trashing hard-deleted the file — in both cases the
  *   file is gone and we refuse rather than leave a pending row with no file.
@@ -43,7 +44,7 @@ export async function POST(request: Request) {
         // @ts-ignore - Supabase type inference is flaky in this project
         const { data: doc, error: fetchError } = await supabase
             .from('documents')
-            .select('id, status, auto_action_reason, source, drive_file_id, sender_domain, approved_at')
+            .select('id, status, auto_action_reason, source, drive_file_id, sender_domain, approved_at, received_date')
             .eq('id', documentId)
             .eq('user_id', user.id)
             .maybeSingle()
@@ -124,11 +125,31 @@ async function restoreManualRejection(
     }
 
     const restoredStatus = doc.approved_at ? 'approved' : 'pending'
+    const documentUpdate: Record<string, unknown> = { status: restoredStatus, rejected_at: null }
+
+    if (restoredStatus === 'approved') {
+        // @ts-ignore - Supabase type inference is flaky in this project
+        const { data: settings } = await supabase
+            .from('user_settings')
+            .select('drive_folder_id, approved_folder_mode, approved_folder_id, approved_folder_name')
+            .eq('user_id', userId)
+            .maybeSingle()
+
+        // @ts-ignore
+        if (!settings?.drive_folder_id) {
+            return NextResponse.json({ error: 'Drive folder not configured' }, { status: 400 })
+        }
+
+        // @ts-ignore
+        const approved = await resolveApprovedMonthFolder(drive, settings, doc.received_date)
+        await moveFileToFolder(drive, doc.drive_file_id, approved.folderId)
+        documentUpdate.drive_folder_path = approved.path
+    }
 
     const { error: updateError } = await supabase
         .from('documents')
         // @ts-ignore - Supabase row types infer as never across this project
-        .update({ status: restoredStatus, rejected_at: null })
+        .update(documentUpdate)
         .eq('id', doc.id)
         .eq('user_id', userId)
 
