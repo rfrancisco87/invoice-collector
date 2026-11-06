@@ -21,6 +21,7 @@ interface Document {
   subject: string | null
   received_date: string
   rejected_at: string | null
+  approved_at?: string | null
   auto_action_reason: string | null
   source: 'gmail' | 'inbox_folder'
   supplier_name?: string | null
@@ -51,10 +52,15 @@ export function RejectedDocumentList({ documents }: RejectedDocumentListProps) {
       const body = await response.json()
       if (!response.ok) throw new Error(body.error || 'Falha ao restaurar')
 
-      // Both paths end with the document back in the pending list: manual
-      // rejections are untrashed in place, auto-rejections are fetched again
-      // from Gmail / the inbox original and reprocessed.
-      toast.success('Restaurado. O documento voltou para pendentes.')
+      // Manual rejections are untrashed in place and return to the status they
+      // had (approved if rejected from the Approved page, else pending).
+      // Auto-rejections are fetched again from Gmail / the inbox original and
+      // reprocessed as pending.
+      toast.success(
+        body.restoredStatus === 'approved'
+          ? 'Restaurado. O documento voltou para aprovados.'
+          : 'Restaurado. O documento voltou para pendentes.',
+      )
       router.refresh()
     } catch (error) {
       console.error('Restore error:', error)
@@ -159,7 +165,9 @@ export function RejectedDocumentList({ documents }: RejectedDocumentListProps) {
                       <TooltipContent>
                         {isAuto
                           ? 'Reverter rejeição automática. O ficheiro é reprocessado e volta para pendentes.'
-                          : 'Reverter rejeição. O documento volta para pendentes.'}
+                          : doc.approved_at
+                            ? 'Reverter rejeição. O documento volta para aprovados.'
+                            : 'Reverter rejeição. O documento volta para pendentes.'}
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>

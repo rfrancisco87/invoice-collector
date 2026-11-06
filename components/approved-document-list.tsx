@@ -1,7 +1,9 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { ExternalLink, FileText, Mail, FolderOpen, Search } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { ExternalLink, FileText, Mail, FolderOpen, Search, X } from 'lucide-react'
+import toast from 'react-hot-toast'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -11,6 +13,14 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 
 interface Document {
   id: string
@@ -36,7 +46,34 @@ interface ApprovedDocumentListProps {
 }
 
 export function ApprovedDocumentList({ documents }: ApprovedDocumentListProps) {
+  const router = useRouter()
   const [searchTerm, setSearchTerm] = useState('')
+  const [rejectTarget, setRejectTarget] = useState<Document | null>(null)
+  const [rejecting, setRejecting] = useState(false)
+
+  // Reuses the regular reject action: the Drive file goes to the trash and the
+  // row becomes 'rejected'. approved_at is kept, so restoring it from the
+  // Rejected page puts it back in Approved.
+  const handleReject = async () => {
+    if (!rejectTarget) return
+    try {
+      setRejecting(true)
+      const response = await fetch('/api/documents/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documentId: rejectTarget.id, action: 'reject' }),
+      })
+      if (!response.ok) throw new Error('Failed to reject')
+      toast.success('Documento rejeitado')
+      setRejectTarget(null)
+      router.refresh()
+    } catch (error) {
+      console.error('Reject error:', error)
+      toast.error('Falha ao rejeitar documento.')
+    } finally {
+      setRejecting(false)
+    }
+  }
 
   const filteredDocuments = useMemo(() => {
     if (!searchTerm) return documents
@@ -131,7 +168,7 @@ export function ApprovedDocumentList({ documents }: ApprovedDocumentListProps) {
           <div className="flex-shrink-0 w-40">
             <span className="text-xs font-medium text-muted-foreground">Localização</span>
           </div>
-          <div className="flex-shrink-0 w-12 text-right ml-auto">
+          <div className="flex-shrink-0 w-20 text-right ml-auto">
             <span className="text-xs font-medium text-muted-foreground">Ações</span>
           </div>
         </div>
@@ -229,9 +266,9 @@ export function ApprovedDocumentList({ documents }: ApprovedDocumentListProps) {
                   </div>
 
                   {/* Actions Column */}
-                  <div className="flex-shrink-0 w-12 flex justify-end ml-auto">
-                    {doc.drive_file_id && (
-                      <TooltipProvider delayDuration={300}>
+                  <div className="flex-shrink-0 w-20 flex justify-end gap-1 ml-auto">
+                    <TooltipProvider delayDuration={300}>
+                      {doc.drive_file_id && (
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Button asChild variant="ghost" size="sm" className="h-8 w-8 p-0">
@@ -246,8 +283,21 @@ export function ApprovedDocumentList({ documents }: ApprovedDocumentListProps) {
                           </TooltipTrigger>
                           <TooltipContent>Ver PDF no Drive</TooltipContent>
                         </Tooltip>
-                      </TooltipProvider>
-                    )}
+                      )}
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            onClick={() => setRejectTarget(doc)}
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Rejeitar documento</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   </div>
                 </div>
               </div>
@@ -255,6 +305,34 @@ export function ApprovedDocumentList({ documents }: ApprovedDocumentListProps) {
           })
         )}
       </div>
+
+      <Dialog
+        open={rejectTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !rejecting) setRejectTarget(null)
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Rejeitar documento aprovado?</DialogTitle>
+            <DialogDescription>
+              {rejectTarget?.supplier_name || rejectTarget?.filename}
+              {rejectTarget?.invoice_number ? ` · ${rejectTarget.invoice_number}` : ''}
+              <br />
+              O ficheiro é movido para o lixo do Drive. Pode restaurá-lo na página de
+              rejeitados durante 30 dias.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRejectTarget(null)} disabled={rejecting}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={handleReject} disabled={rejecting}>
+              {rejecting ? 'A rejeitar...' : 'Rejeitar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

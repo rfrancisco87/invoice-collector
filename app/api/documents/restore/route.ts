@@ -17,8 +17,11 @@ import { restoreAutoRejectedDocument } from '@/lib/restore-document'
  *
  * Manually rejected (auto_action_reason IS NULL)
  *   The reject action moves the Drive file to the trash, so we untrash it
- *   (it returns to its original Pending folder), put the row back to
- *   'pending', and undo the rejection's effect on sender reputation.
+ *   (it returns to the folder it was in), put the row back to the status it
+ *   had before, and undo the rejection's effect on sender reputation.
+ *   Documents rejected from the Approved page keep approved_at, and their
+ *   file untrashes back into Approved/MM-YYYY, so they return to 'approved';
+ *   everything else returns to 'pending'.
  *   Drive purges trash after 30 days, and rejections made before the reject
  *   action switched to trashing hard-deleted the file — in both cases the
  *   file is gone and we refuse rather than leave a pending row with no file.
@@ -40,7 +43,7 @@ export async function POST(request: Request) {
         // @ts-ignore - Supabase type inference is flaky in this project
         const { data: doc, error: fetchError } = await supabase
             .from('documents')
-            .select('id, status, auto_action_reason, source, drive_file_id, sender_domain')
+            .select('id, status, auto_action_reason, source, drive_file_id, sender_domain, approved_at')
             .eq('id', documentId)
             .eq('user_id', user.id)
             .maybeSingle()
@@ -120,10 +123,12 @@ async function restoreManualRejection(
         throw err
     }
 
+    const restoredStatus = doc.approved_at ? 'approved' : 'pending'
+
     const { error: updateError } = await supabase
         .from('documents')
         // @ts-ignore - Supabase row types infer as never across this project
-        .update({ status: 'pending', rejected_at: null })
+        .update({ status: restoredStatus, rejected_at: null })
         .eq('id', doc.id)
         .eq('user_id', userId)
 
@@ -133,7 +138,12 @@ async function restoreManualRejection(
 
     await undoRejectionFeedback(supabase, userId, doc.id, doc.sender_domain)
 
-    return NextResponse.json({ success: true, mode: 'in_place', source: doc.source })
+    return NextResponse.json({
+        success: true,
+        mode: 'in_place',
+        source: doc.source,
+        restoredStatus,
+    })
 }
 
 /**
