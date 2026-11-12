@@ -6,6 +6,8 @@ import { sendTestEmail } from '@/lib/email'
 import { createFolderStructure, deleteDriveFolder } from '@/lib/google-drive'
 import { assertSafeOutboundUrl, UnsafeUrlError } from '@/lib/safe-url'
 import { getValidGmailAccessToken } from '@/lib/gmail-tokens'
+import { getGmailClient } from '@/lib/gmail'
+import { listSendAsAddresses } from '@/lib/gmail-send'
 
 export async function GET() {
   try {
@@ -74,6 +76,7 @@ export async function PATCH(request: Request) {
       approved_filename_template,
       approved_delivery_mode,
       approved_delivery_email,
+      approved_delivery_from,
       webhook_url,
       prefilter_enabled,
       classification_confidence_threshold,
@@ -245,6 +248,41 @@ export async function PATCH(request: Request) {
         return NextResponse.json({ error: 'Email de destino inválido.' }, { status: 400 })
       }
       updates.approved_delivery_email = trimmed
+    }
+    if (approved_delivery_from !== undefined) {
+      if (approved_delivery_from !== null && typeof approved_delivery_from !== 'string') {
+        return NextResponse.json({ error: 'Endereço de envio inválido.' }, { status: 400 })
+      }
+      const wanted = approved_delivery_from?.trim().toLowerCase() || null
+      if (wanted && wanted !== currentSettings?.approved_delivery_from) {
+        // Only addresses Gmail will actually send as; anything else would be
+        // silently rewritten to the primary address and refused by TOCOnline.
+        const { data: account } = await supabase
+          .from('gmail_accounts')
+          .select('id, user_id, access_token, refresh_token, token_expiry')
+          .eq('user_id', user.id)
+          .maybeSingle()
+        if (!account) {
+          return NextResponse.json({ error: 'Ligue uma conta Gmail primeiro.' }, { status: 400 })
+        }
+        try {
+          const gmail = await getGmailClient(await getValidGmailAccessToken(supabase, account))
+          const senders = await listSendAsAddresses(gmail)
+          if (!senders.some((a) => a.email === wanted)) {
+            return NextResponse.json(
+              { error: 'Este endereço não está verificado como "Enviar como" na conta Gmail ligada.' },
+              { status: 400 }
+            )
+          }
+        } catch (err) {
+          console.error('[Settings] Failed to verify send-as address:', err)
+          return NextResponse.json(
+            { error: 'Não foi possível verificar o endereço de envio no Gmail.' },
+            { status: 502 }
+          )
+        }
+      }
+      updates.approved_delivery_from = wanted
     }
     const effectiveDeliveryMode =
       updates.approved_delivery_mode ?? currentSettings?.approved_delivery_mode ?? 'drive'

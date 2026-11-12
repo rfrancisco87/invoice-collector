@@ -335,6 +335,7 @@ export type Database = {
           approved_filename_template: string | null
           approved_delivery_mode: 'drive' | 'email'
           approved_delivery_email: string | null
+          approved_delivery_from: string | null
           last_inbox_sync_at: string | null
           sync_days_back: number
           auto_sync_enabled: boolean
@@ -375,6 +376,7 @@ export type Database = {
           approved_filename_template?: string | null
           approved_delivery_mode?: 'drive' | 'email'
           approved_delivery_email?: string | null
+          approved_delivery_from?: string | null
           last_inbox_sync_at?: string | null
           sync_days_back?: number
           auto_sync_enabled?: boolean
@@ -415,6 +417,7 @@ export type Database = {
           approved_filename_template?: string | null
           approved_delivery_mode?: 'drive' | 'email'
           approved_delivery_email?: string | null
+          approved_delivery_from?: string | null
           last_inbox_sync_at?: string | null
           sync_days_back?: number
           auto_sync_enabled?: boolean

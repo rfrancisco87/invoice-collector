@@ -13,7 +13,9 @@ import {
   moveFileToFolder,
   resolveApprovedMonthFolder,
 } from '@/lib/drive-folders'
-import { sendApprovedDocumentEmail } from '@/lib/email'
+import { buildApprovedDocumentEmail } from '@/lib/email'
+import { getGmailClient } from '@/lib/gmail'
+import { listSendAsAddresses, sendGmailMessage } from '@/lib/gmail-send'
 import { Database } from '@/types/database'
 
 export async function POST(request: Request) {
@@ -77,7 +79,8 @@ export async function POST(request: Request) {
     }
 
     // Stored tokens are encrypted; this decrypts and refreshes if needed.
-    const drive = await getDriveClient(await getValidGmailAccessToken(supabase, gmailAccount))
+    const accessToken = await getValidGmailAccessToken(supabase, gmailAccount)
+    const drive = await getDriveClient(accessToken)
 
     if (action === 'approve') {
       // @ts-ignore
@@ -134,6 +137,39 @@ export async function POST(request: Request) {
           )
         }
 
+        // TOCOnline only accepts documents from the address registered there,
+        // so the mail goes out through the user's own Gmail account, from the
+        // chosen "send as" address. Gmail would silently swap an unverified
+        // From for the primary address, so check it before sending.
+        const gmail = await getGmailClient(accessToken)
+        let sender
+        try {
+          const senders = await listSendAsAddresses(gmail)
+          // @ts-ignore
+          const wanted = (settings.approved_delivery_from as string | null)?.toLowerCase()
+          sender = wanted
+            ? senders.find((a) => a.email === wanted)
+            : senders.find((a) => a.isPrimary)
+        } catch (err: any) {
+          const status = err?.code ?? err?.response?.status
+          console.error('[Action] Could not list Gmail send-as addresses:', err?.message || err)
+          return NextResponse.json(
+            {
+              error: status === 403
+                ? 'A conta Google ligada não tem permissão para enviar emails. Volte a ligar a conta Gmail.'
+                : 'Falha ao verificar o endereço de envio no Gmail. Tente novamente.',
+            },
+            { status: status === 403 ? 403 : 502 }
+          )
+        }
+        if (!sender) {
+          return NextResponse.json(
+            // @ts-ignore
+            { error: `O endereço de envio ${settings.approved_delivery_from} já não está disponível na conta Gmail ligada. Escolha outro nas definições.` },
+            { status: 400 }
+          )
+        }
+
         // Send first: if delivery fails the document stays pending and the
         // file stays in Pending Approval, so the user can simply retry.
         const response = await drive.files.get(
@@ -142,26 +178,28 @@ export async function POST(request: Request) {
           { responseType: 'arraybuffer' },
         )
         const content = Buffer.from(response.data as ArrayBuffer)
+        // @ts-ignore
+        const attachmentName: string = finalFilename || document.filename
+        const { subject, html } = buildApprovedDocumentEmail({
+          filename: attachmentName,
+          // @ts-ignore
+          supplierName: document.supplier_name,
+          // @ts-ignore
+          invoiceNumber: document.invoice_number,
+          // @ts-ignore
+          receivedDate: document.received_date,
+        })
 
         try {
-          await sendApprovedDocumentEmail(
-            deliveryEmail!,
-            {
-              // @ts-ignore
-              filename: finalFilename || document.filename,
-              content,
-              // @ts-ignore
-              supplierName: document.supplier_name,
-              // @ts-ignore
-              invoiceNumber: document.invoice_number,
-              // @ts-ignore
-              receivedDate: document.received_date,
-            },
-            // @ts-ignore
-            settings.notification_email || user.email,
-          )
-        } catch (sendError) {
-          console.error('[Action] Email delivery failed:', sendError)
+          await sendGmailMessage(gmail, {
+            from: sender,
+            to: deliveryEmail!,
+            subject,
+            html,
+            attachment: { filename: attachmentName, content },
+          })
+        } catch (sendError: any) {
+          console.error('[Action] Email delivery failed:', sendError?.message || sendError)
           return NextResponse.json(
             { error: 'Falha ao enviar o documento por email. Tente novamente.' },
             { status: 502 }

@@ -326,23 +326,18 @@ export async function sendTestEmail(toEmail: string) {
 
 interface ApprovedDocumentEmail {
   filename: string
-  content: Buffer
   supplierName?: string | null
   invoiceNumber?: string | null
   receivedDate?: string | null
 }
 
 /**
- * Deliver an approved document to the user's accounting inbox (e.g. the
- * TOCOnline document-reception address) as an email attachment. Used instead
- * of filing it in the Drive Approved folder when approved_delivery_mode is
- * 'email'. Throws on failure so the caller can leave the document pending.
+ * Subject and body for an approved document delivered to the user's
+ * accounting inbox (e.g. TOCOnline). Sent through the user's own Gmail
+ * account (see lib/gmail-send.ts), not Resend, because those inboxes only
+ * accept mail from the user's registered address.
  */
-export async function sendApprovedDocumentEmail(
-  toEmail: string,
-  doc: ApprovedDocumentEmail,
-  replyTo?: string | null,
-) {
+export function buildApprovedDocumentEmail(doc: ApprovedDocumentEmail) {
   const label = [doc.supplierName, doc.invoiceNumber].filter(Boolean).join(' - ') || doc.filename
   const received = doc.receivedDate
     ? new Date(doc.receivedDate).toLocaleDateString('pt-PT')
@@ -361,20 +356,5 @@ export async function sendApprovedDocumentEmail(
     `,
   )
 
-  const { data, error } = await resend.emails.send({
-    from: fromAddress(),
-    to: toEmail,
-    ...(replyTo ? { replyTo } : {}),
-    // Header values must not carry line breaks from attacker-controlled names.
-    subject: `Documento: ${label}`.replace(/[\r\n]+/g, ' ').slice(0, 200),
-    html,
-    attachments: [{ filename: doc.filename, content: doc.content }],
-  })
-
-  if (error) {
-    console.error('[Email] Failed to deliver approved document:', error)
-    throw new Error(`Failed to send approved document: ${error.message}`)
-  }
-
-  return { success: true, emailId: data?.id }
+  return { subject: `Documento: ${label}`.slice(0, 200), html }
 }

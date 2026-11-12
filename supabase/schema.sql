@@ -2143,6 +2143,12 @@ comment on column public.user_settings.approved_delivery_mode is
 comment on column public.user_settings.approved_delivery_email is
   'Destination address for approved documents when approved_delivery_mode = ''email'' (e.g. the TOCOnline document-reception email).';
 
+alter table public.user_settings
+add column if not exists approved_delivery_from text;
+
+comment on column public.user_settings.approved_delivery_from is
+  'Gmail "send as" address approved documents are emailed from (must be the connected account''s primary address or a verified alias). NULL means the primary address.';
+
 alter table public.documents
 add column if not exists emailed_to text;
 

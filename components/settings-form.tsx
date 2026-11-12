@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -46,6 +46,7 @@ interface Settings {
   approved_filename_template?: string | null
   approved_delivery_mode?: 'drive' | 'email' | null
   approved_delivery_email?: string | null
+  approved_delivery_from?: string | null
   webhook_url?: string | null
   prefilter_enabled?: boolean
   classification_confidence_threshold?: number
@@ -97,6 +98,7 @@ export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormPr
       settings?.approved_filename_template || DEFAULT_APPROVED_FILENAME_TEMPLATE,
     approved_delivery_mode: (settings?.approved_delivery_mode || 'drive') as 'drive' | 'email',
     approved_delivery_email: settings?.approved_delivery_email || '',
+    approved_delivery_from: settings?.approved_delivery_from || '',
     webhook_url: settings?.webhook_url || '',
     prefilter_enabled: settings?.prefilter_enabled ?? true,
     classification_confidence_threshold:
@@ -108,6 +110,41 @@ export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormPr
     classifier_model: settings?.classifier_model || '',
   })
   const [isSaving, setIsSaving] = useState(false)
+  const [sendAsAddresses, setSendAsAddresses] = useState<
+    { email: string; displayName: string | null; isPrimary: boolean }[] | null
+  >(null)
+  const [sendAsError, setSendAsError] = useState<string | null>(null)
+
+  // Senders come from the connected Gmail account ("Send mail as" aliases),
+  // loaded only once the user opts into email delivery.
+  useEffect(() => {
+    if (formData.approved_delivery_mode !== 'email' || sendAsAddresses !== null) return
+    let cancelled = false
+    fetch('/api/gmail/send-as')
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}))
+        if (cancelled) return
+        if (!res.ok) {
+          setSendAsAddresses([])
+          setSendAsError(
+            res.status === 403
+              ? 'A conta Google ligada não tem permissão de Gmail. Volte a ligar a conta Gmail.'
+              : 'Não foi possível carregar os endereços de envio do Gmail.'
+          )
+          return
+        }
+        setSendAsAddresses(data.addresses || [])
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSendAsAddresses([])
+          setSendAsError('Não foi possível carregar os endereços de envio do Gmail.')
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [formData.approved_delivery_mode, sendAsAddresses])
   const [isSendingTest, setIsSendingTest] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
@@ -359,6 +396,42 @@ export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormPr
                       approved_delivery_email: e.target.value,
                     }))}
                   />
+                  <Label htmlFor="approved_delivery_from">Enviar a partir de</Label>
+                  <select
+                    id="approved_delivery_from"
+                    value={formData.approved_delivery_from}
+                    disabled={sendAsAddresses === null}
+                    onChange={(e) => setFormData(prev => ({
+                      ...prev,
+                      approved_delivery_from: e.target.value,
+                    }))}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    {sendAsAddresses === null && <option value={formData.approved_delivery_from}>A carregar…</option>}
+                    {sendAsAddresses !== null && (
+                      <option value="">Endereço principal da conta Gmail</option>
+                    )}
+                    {sendAsAddresses?.map((a) => (
+                      <option key={a.email} value={a.email}>
+                        {a.displayName ? `${a.displayName} <${a.email}>` : a.email}
+                        {a.isPrimary ? ' (principal)' : ''}
+                      </option>
+                    ))}
+                    {/* Keep a saved sender visible even if Gmail no longer lists it. */}
+                    {sendAsAddresses !== null &&
+                      formData.approved_delivery_from &&
+                      !sendAsAddresses.some((a) => a.email === formData.approved_delivery_from) && (
+                        <option value={formData.approved_delivery_from}>
+                          {formData.approved_delivery_from} (não verificado)
+                        </option>
+                      )}
+                  </select>
+                  {sendAsError && <p className="text-xs text-destructive">{sendAsError}</p>}
+                  <p className="text-xs text-muted-foreground">
+                    O email é enviado pela sua conta Gmail ligada, a partir deste endereço — tem de ser o
+                    endereço registado no TOCOnline. Para usar outro endereço, adicione-o em Gmail →
+                    Definições → Contas → &quot;Enviar email como&quot;.
+                  </p>
                   <p className="text-xs text-muted-foreground">
                     Cada documento aprovado é enviado como anexo para este endereço (por exemplo, o email de
                     receção de documentos da sua conta TOCOnline) e continua a ser guardado na pasta de
