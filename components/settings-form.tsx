@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Bell, Mail, Clock, Check, Tag, Archive, AlertCircle, HardDrive, FolderInput, FolderCheck, FileText } from 'lucide-react'
+import { Bell, Mail, Clock, Check, Tag, Archive, AlertCircle, HardDrive, FolderInput, FolderCheck, FileText, Send } from 'lucide-react'
 import Link from 'next/link'
 import { DriveFolderSelector } from './drive-folder-selector'
 import { ApiKeyManager } from './api-key-manager'
@@ -44,6 +44,8 @@ interface Settings {
   approved_folder_name?: string | null
   approved_folder_mode?: 'managed' | 'existing' | null
   approved_filename_template?: string | null
+  approved_delivery_mode?: 'drive' | 'email' | null
+  approved_delivery_email?: string | null
   webhook_url?: string | null
   prefilter_enabled?: boolean
   classification_confidence_threshold?: number
@@ -93,6 +95,8 @@ export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormPr
     approved_folder_mode: settings?.approved_folder_mode || initialApprovedMode,
     approved_filename_template:
       settings?.approved_filename_template || DEFAULT_APPROVED_FILENAME_TEMPLATE,
+    approved_delivery_mode: (settings?.approved_delivery_mode || 'drive') as 'drive' | 'email',
+    approved_delivery_email: settings?.approved_delivery_email || '',
     webhook_url: settings?.webhook_url || '',
     prefilter_enabled: settings?.prefilter_enabled ?? true,
     classification_confidence_threshold:
@@ -131,6 +135,15 @@ export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormPr
     }
 
     if (
+      formData.approved_delivery_mode === 'email' &&
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.approved_delivery_email.trim())
+    ) {
+      setMessage({ type: 'error', text: 'Indique um email válido para enviar os documentos aprovados.' })
+      return
+    }
+
+    if (
+      formData.approved_delivery_mode === 'drive' &&
       formData.approved_folder_mode === 'existing' &&
       !formData.approved_folder_id
     ) {
@@ -301,6 +314,60 @@ export function SettingsForm({ settings, userEmail, gmailEmail }: SettingsFormPr
               drive_folder_path: path
             }))}
           />
+
+          {/* Approved Documents Destination */}
+          <div className="pt-4 border-t border-border space-y-4">
+            <div className="flex items-center gap-3">
+              <Send className="h-5 w-5 text-primary" />
+              <h3 className="text-sm font-semibold text-foreground">Destino dos Documentos Aprovados</h3>
+            </div>
+
+            <div className="space-y-3 ml-8">
+              <div className="flex items-center gap-2">
+                <input
+                  id="approved_delivery_drive"
+                  type="radio"
+                  name="approved_delivery_mode"
+                  checked={formData.approved_delivery_mode === 'drive'}
+                  onChange={() => setFormData(prev => ({ ...prev, approved_delivery_mode: 'drive' }))}
+                  className="h-4 w-4 border-input text-primary focus:ring-primary"
+                />
+                <Label htmlFor="approved_delivery_drive">Apenas guardar na pasta de aprovados do Google Drive</Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  id="approved_delivery_email"
+                  type="radio"
+                  name="approved_delivery_mode"
+                  checked={formData.approved_delivery_mode === 'email'}
+                  onChange={() => setFormData(prev => ({ ...prev, approved_delivery_mode: 'email' }))}
+                  className="h-4 w-4 border-input text-primary focus:ring-primary"
+                />
+                <Label htmlFor="approved_delivery_email">Guardar no Google Drive e enviar por email (ex.: TOCOnline)</Label>
+              </div>
+
+              {formData.approved_delivery_mode === 'email' && (
+                <div className="space-y-2">
+                  <Label htmlFor="approved_delivery_email_address">Email de destino</Label>
+                  <Input
+                    id="approved_delivery_email_address"
+                    type="email"
+                    placeholder="documentos@exemplo.toconline.pt"
+                    value={formData.approved_delivery_email}
+                    onChange={(e) => setFormData(prev => ({
+                      ...prev,
+                      approved_delivery_email: e.target.value,
+                    }))}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Cada documento aprovado é enviado como anexo para este endereço (por exemplo, o email de
+                    receção de documentos da sua conta TOCOnline) e continua a ser guardado na pasta de
+                    aprovados do Google Drive.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
 
           {/* Approved Folder Option */}
           <div className="pt-4 border-t border-border space-y-4">

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { z } from 'zod'
 import { requireApiUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { sendTestEmail } from '@/lib/email'
@@ -71,6 +72,8 @@ export async function PATCH(request: Request) {
       approved_folder_name,
       approved_folder_mode,
       approved_filename_template,
+      approved_delivery_mode,
+      approved_delivery_email,
       webhook_url,
       prefilter_enabled,
       classification_confidence_threshold,
@@ -224,6 +227,36 @@ export async function PATCH(request: Request) {
         ? approved_filename_template.trim()
         : null
       updates.approved_filename_template = trimmed ? trimmed : null
+    }
+
+    // Approved document delivery: Drive folder or email (e.g. TOCOnline inbox)
+    if (approved_delivery_mode !== undefined) {
+      if (!['drive', 'email'].includes(approved_delivery_mode)) {
+        return NextResponse.json({ error: 'Destino dos documentos aprovados inválido.' }, { status: 400 })
+      }
+      updates.approved_delivery_mode = approved_delivery_mode
+    }
+    if (approved_delivery_email !== undefined) {
+      if (approved_delivery_email !== null && typeof approved_delivery_email !== 'string') {
+        return NextResponse.json({ error: 'Email de destino inválido.' }, { status: 400 })
+      }
+      const trimmed = approved_delivery_email?.trim() || null
+      if (trimmed && !z.string().email().safeParse(trimmed).success) {
+        return NextResponse.json({ error: 'Email de destino inválido.' }, { status: 400 })
+      }
+      updates.approved_delivery_email = trimmed
+    }
+    const effectiveDeliveryMode =
+      updates.approved_delivery_mode ?? currentSettings?.approved_delivery_mode ?? 'drive'
+    const effectiveDeliveryEmail =
+      updates.approved_delivery_email !== undefined
+        ? updates.approved_delivery_email
+        : currentSettings?.approved_delivery_email
+    if (effectiveDeliveryMode === 'email' && !effectiveDeliveryEmail) {
+      return NextResponse.json(
+        { error: 'Indique o email para onde enviar os documentos aprovados.' },
+        { status: 400 }
+      )
     }
 
     // subscription_tier (and the sync_frequency_minutes derived from it) is

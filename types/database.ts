@@ -333,6 +333,8 @@ export type Database = {
           approved_folder_name: string | null
           approved_folder_mode: 'managed' | 'existing' | null
           approved_filename_template: string | null
+          approved_delivery_mode: 'drive' | 'email'
+          approved_delivery_email: string | null
           last_inbox_sync_at: string | null
           sync_days_back: number
           auto_sync_enabled: boolean
@@ -371,6 +373,8 @@ export type Database = {
           approved_folder_name?: string | null
           approved_folder_mode?: 'managed' | 'existing' | null
           approved_filename_template?: string | null
+          approved_delivery_mode?: 'drive' | 'email'
+          approved_delivery_email?: string | null
           last_inbox_sync_at?: string | null
           sync_days_back?: number
           auto_sync_enabled?: boolean
@@ -409,6 +413,8 @@ export type Database = {
           approved_folder_name?: string | null
           approved_folder_mode?: 'managed' | 'existing' | null
           approved_filename_template?: string | null
+          approved_delivery_mode?: 'drive' | 'email'
+          approved_delivery_email?: string | null
           last_inbox_sync_at?: string | null
           sync_days_back?: number
           auto_sync_enabled?: boolean
@@ -469,6 +475,8 @@ export type Database = {
           inbox_file_id: string | null
           processed_at: string
           approved_at: string | null
+          emailed_to: string | null
+          emailed_at: string | null
           rejected_at: string | null
           auto_action_reason: string | null
           invoice_number: string | null
@@ -519,6 +527,8 @@ export type Database = {
           inbox_file_id?: string | null
           processed_at?: string
           approved_at?: string | null
+          emailed_to?: string | null
+          emailed_at?: string | null
           rejected_at?: string | null
           auto_action_reason?: string | null
           invoice_number?: string | null
@@ -569,6 +579,8 @@ export type Database = {
           inbox_file_id?: string | null
           processed_at?: string
           approved_at?: string | null
+          emailed_to?: string | null
+          emailed_at?: string | null
           rejected_at?: string | null
           auto_action_reason?: string | null
           invoice_number?: string | null

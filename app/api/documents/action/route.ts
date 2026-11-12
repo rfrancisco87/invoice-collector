@@ -13,6 +13,7 @@ import {
   moveFileToFolder,
   resolveApprovedMonthFolder,
 } from '@/lib/drive-folders'
+import { sendApprovedDocumentEmail } from '@/lib/email'
 import { Database } from '@/types/database'
 
 export async function POST(request: Request) {
@@ -80,11 +81,19 @@ export async function POST(request: Request) {
 
     if (action === 'approve') {
       // @ts-ignore
-      const approved = await resolveApprovedMonthFolder(drive, settings, document.received_date)
+      const deliverByEmail = settings.approved_delivery_mode === 'email'
+      // @ts-ignore
+      const deliveryEmail: string | null = settings.approved_delivery_email || null
 
-      // Move the file out of whatever folder it is in (Pending Approval, or the
-      // inbox folder's pending location) and rename it with the user's template
-      // in the same Drive call.
+      if (deliverByEmail && !deliveryEmail) {
+        return NextResponse.json(
+          { error: 'Configure o email de destino dos documentos aprovados nas definições.' },
+          { status: 400 }
+        )
+      }
+
+      // Rename with the user's template; applies to the Drive file or to the
+      // email attachment, depending on the delivery mode.
       let finalFilename: string | null = null
       // @ts-ignore
       if (document.drive_file_id) {
@@ -101,7 +110,85 @@ export async function POST(request: Request) {
         if (renamed && renamed !== document.filename) {
           finalFilename = renamed
         }
+      }
 
+      const documentUpdate: any = {
+        status: 'approved' as const,
+        approved_at: new Date().toISOString(),
+      }
+      if (finalFilename) {
+        documentUpdate.filename = finalFilename
+      }
+
+      // Already delivered to this address (e.g. a previous approve sent the
+      // email but failed on the Drive move): don't send it twice.
+      // @ts-ignore
+      const alreadyEmailed = !!document.emailed_at && document.emailed_to === deliveryEmail
+
+      if (deliverByEmail && !alreadyEmailed) {
+        // @ts-ignore
+        if (!document.drive_file_id) {
+          return NextResponse.json(
+            { error: 'O ficheiro deste documento não existe no Drive e não pode ser enviado.' },
+            { status: 409 }
+          )
+        }
+
+        // Send first: if delivery fails the document stays pending and the
+        // file stays in Pending Approval, so the user can simply retry.
+        const response = await drive.files.get(
+          // @ts-ignore
+          { fileId: document.drive_file_id, alt: 'media' },
+          { responseType: 'arraybuffer' },
+        )
+        const content = Buffer.from(response.data as ArrayBuffer)
+
+        try {
+          await sendApprovedDocumentEmail(
+            deliveryEmail!,
+            {
+              // @ts-ignore
+              filename: finalFilename || document.filename,
+              content,
+              // @ts-ignore
+              supplierName: document.supplier_name,
+              // @ts-ignore
+              invoiceNumber: document.invoice_number,
+              // @ts-ignore
+              receivedDate: document.received_date,
+            },
+            // @ts-ignore
+            settings.notification_email || user.email,
+          )
+        } catch (sendError) {
+          console.error('[Action] Email delivery failed:', sendError)
+          return NextResponse.json(
+            { error: 'Falha ao enviar o documento por email. Tente novamente.' },
+            { status: 502 }
+          )
+        }
+
+        // Record delivery straight away, before the Drive move, so a retry
+        // after a Drive failure does not email the accountant again.
+        const emailedFields = { emailed_to: deliveryEmail, emailed_at: new Date().toISOString() }
+        await supabase
+          .from('documents')
+          // @ts-ignore - Supabase row types infer as never across this project
+          .update(emailedFields)
+          .eq('id', documentId)
+          .eq('user_id', user.id)
+        Object.assign(documentUpdate, emailedFields)
+      }
+
+      // Both modes file the document in Approved/MM-YYYY, so the user keeps a
+      // copy in Drive even when it was also emailed to the accounting inbox.
+      // @ts-ignore
+      const approved = await resolveApprovedMonthFolder(drive, settings, document.received_date)
+
+      // Move the file out of whatever folder it is in (Pending Approval, or the
+      // inbox folder's pending location) and rename it in the same Drive call.
+      // @ts-ignore
+      if (document.drive_file_id) {
         await moveFileToFolder(
           drive,
           // @ts-ignore
@@ -111,15 +198,7 @@ export async function POST(request: Request) {
         )
       }
 
-      // Update document status
-      const documentUpdate: any = {
-        status: 'approved' as const,
-        approved_at: new Date().toISOString(),
-        drive_folder_path: approved.path,
-      }
-      if (finalFilename) {
-        documentUpdate.filename = finalFilename
-      }
+      documentUpdate.drive_folder_path = approved.path
       // @ts-ignore
       await supabase
         .from('documents')

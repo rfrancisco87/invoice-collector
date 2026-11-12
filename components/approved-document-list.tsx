@@ -34,6 +34,8 @@ interface Document {
   drive_file_id: string | null
   drive_folder_path: string | null
   approved_at: string | null
+  emailed_to?: string | null
+  emailed_at?: string | null
   invoice_number?: string | null
   supplier_name?: string | null
   invoice_total?: number | null
@@ -168,7 +170,7 @@ export function ApprovedDocumentList({ documents }: ApprovedDocumentListProps) {
           <div className="flex-shrink-0 w-40">
             <span className="text-xs font-medium text-muted-foreground">Localização</span>
           </div>
-          <div className="flex-shrink-0 w-20 text-right ml-auto">
+          <div className="flex-shrink-0 w-28 text-right ml-auto">
             <span className="text-xs font-medium text-muted-foreground">Ações</span>
           </div>
         </div>
@@ -266,8 +268,18 @@ export function ApprovedDocumentList({ documents }: ApprovedDocumentListProps) {
                   </div>
 
                   {/* Actions Column */}
-                  <div className="flex-shrink-0 w-20 flex justify-end gap-1 ml-auto">
+                  <div className="flex-shrink-0 w-28 flex justify-end gap-1 ml-auto">
                     <TooltipProvider delayDuration={300}>
+                      {doc.emailed_to && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="h-8 w-8 inline-flex items-center justify-center text-muted-foreground">
+                              <Mail className="h-4 w-4" />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>Enviado para {doc.emailed_to}</TooltipContent>
+                        </Tooltip>
+                      )}
                       {doc.drive_file_id && (
                         <Tooltip>
                           <TooltipTrigger asChild>

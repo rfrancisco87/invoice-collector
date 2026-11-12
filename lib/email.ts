@@ -323,3 +323,58 @@ export async function sendTestEmail(toEmail: string) {
     throw error
   }
 }
+
+interface ApprovedDocumentEmail {
+  filename: string
+  content: Buffer
+  supplierName?: string | null
+  invoiceNumber?: string | null
+  receivedDate?: string | null
+}
+
+/**
+ * Deliver an approved document to the user's accounting inbox (e.g. the
+ * TOCOnline document-reception address) as an email attachment. Used instead
+ * of filing it in the Drive Approved folder when approved_delivery_mode is
+ * 'email'. Throws on failure so the caller can leave the document pending.
+ */
+export async function sendApprovedDocumentEmail(
+  toEmail: string,
+  doc: ApprovedDocumentEmail,
+  replyTo?: string | null,
+) {
+  const label = [doc.supplierName, doc.invoiceNumber].filter(Boolean).join(' - ') || doc.filename
+  const received = doc.receivedDate
+    ? new Date(doc.receivedDate).toLocaleDateString('pt-PT')
+    : null
+
+  const html = accountEmailShell(
+    escapeHtml(label),
+    `
+  <p>Documento aprovado em anexo.</p>
+  <ul>
+    <li><strong>Ficheiro:</strong> ${escapeHtml(doc.filename)}</li>
+    ${doc.supplierName ? `<li><strong>Fornecedor:</strong> ${escapeHtml(doc.supplierName)}</li>` : ''}
+    ${doc.invoiceNumber ? `<li><strong>Número:</strong> ${escapeHtml(doc.invoiceNumber)}</li>` : ''}
+    ${received ? `<li><strong>Recebido em:</strong> ${escapeHtml(received)}</li>` : ''}
+  </ul>
+    `,
+  )
+
+  const { data, error } = await resend.emails.send({
+    from: fromAddress(),
+    to: toEmail,
+    ...(replyTo ? { replyTo } : {}),
+    // Header values must not carry line breaks from attacker-controlled names.
+    subject: `Documento: ${label}`.replace(/[\r\n]+/g, ' ').slice(0, 200),
+    html,
+    attachments: [{ filename: doc.filename, content: doc.content }],
+  })
+
+  if (error) {
+    console.error('[Email] Failed to deliver approved document:', error)
+    throw new Error(`Failed to send approved document: ${error.message}`)
+  }
+
+  return { success: true, emailId: data?.id }
+}
